@@ -8,11 +8,13 @@ import {
   Alert,
   RefreshControl,
   ActivityIndicator,
+  StatusBar,
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
-import { Tenant, Profile } from '../../types';
-import { Colors, FontSize, FontWeight, Radius, Spacing } from '../../theme/tokens';
+import { Tenant } from '../../types';
+import { Colors, FontSize, FontWeight, Radius, Spacing, Shadows } from '../../theme/tokens';
+import { LinearGradient } from 'expo-linear-gradient';
 
 interface TenantWithAdmin extends Tenant {
   admin_name?: string;
@@ -133,8 +135,8 @@ export default function SuperDashboardScreen({ navigation }: any) {
           )
         }
       >
-        <Text style={styles.toggleBtnText}>
-          {item.is_active ? '🔴 Deactivate' : '🟢 Activate'}
+        <Text style={[styles.toggleBtnText, item.is_active ? { color: Colors.error } : { color: Colors.success }]}>
+          {item.is_active ? 'Deactivate Mess' : 'Activate Mess'}
         </Text>
       </TouchableOpacity>
     </View>
@@ -142,14 +144,16 @@ export default function SuperDashboardScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
+
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>MessTrack</Text>
+          <Text style={styles.headerTitle}>MessTrack Central</Text>
           <Text style={styles.headerSub}>Super Admin • {profile?.name}</Text>
         </View>
         <TouchableOpacity style={styles.signOutBtn} onPress={signOut}>
-          <Text style={styles.signOutText}>Sign Out</Text>
+          <Text style={styles.signOutIcon}>🚪</Text>
         </TouchableOpacity>
       </View>
 
@@ -189,17 +193,12 @@ export default function SuperDashboardScreen({ navigation }: any) {
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={Colors.primary}
-            />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
           }
           ListEmptyComponent={
             <View style={styles.empty}>
               <Text style={styles.emptyIcon}>🍽️</Text>
-              <Text style={styles.emptyText}>No messes yet</Text>
-              <Text style={styles.emptySubText}>Tap + to create the first mess</Text>
+              <Text style={styles.emptyText}>No messes created yet.</Text>
             </View>
           }
         />
@@ -207,11 +206,18 @@ export default function SuperDashboardScreen({ navigation }: any) {
 
       {/* FAB */}
       <TouchableOpacity
-        style={styles.fab}
+        style={styles.fabContainer}
         onPress={() => navigation.navigate('CreateMess')}
-        activeOpacity={0.85}
+        activeOpacity={0.8}
       >
-        <Text style={styles.fabIcon}>+</Text>
+        <LinearGradient
+          colors={[Colors.primary, Colors.primaryLight]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.fab}
+        >
+          <Text style={styles.fabIcon}>+</Text>
+        </LinearGradient>
       </TouchableOpacity>
     </View>
   );
@@ -224,44 +230,37 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: Spacing.lg,
-    paddingTop: 54,
-    paddingBottom: Spacing.md,
+    paddingVertical: Spacing.md,
     backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
   },
   headerTitle: {
     fontSize: FontSize.xxl,
-    fontWeight: FontWeight.heavy,
+    fontWeight: FontWeight.bold,
     color: Colors.text,
   },
   headerSub: {
-    fontSize: FontSize.xs,
-    color: Colors.primary,
+    fontSize: FontSize.sm,
+    color: Colors.textMuted,
     marginTop: 2,
   },
   signOutBtn: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.card,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    padding: Spacing.sm,
+    backgroundColor: Colors.background,
+    borderRadius: Radius.full,
+    ...Shadows.soft,
   },
-  signOutText: {
-    color: Colors.error,
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.medium,
+  signOutIcon: {
+    fontSize: 20,
   },
   statsBar: {
     flexDirection: 'row',
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surface,
+    paddingVertical: Spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
-    paddingVertical: Spacing.md,
   },
   statItem: {
     flex: 1,
@@ -275,36 +274,33 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: FontSize.xs,
     color: Colors.textMuted,
-    marginTop: 2,
+    marginTop: 4,
   },
   statDivider: {
     width: 1,
     backgroundColor: Colors.border,
-    marginVertical: Spacing.xs,
   },
   list: {
-    padding: Spacing.md,
+    padding: Spacing.lg,
     paddingBottom: 100,
   },
   card: {
-    backgroundColor: Colors.card,
-    borderRadius: Radius.lg,
-    marginBottom: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    overflow: 'hidden',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+    ...Shadows.soft,
   },
   cardHeader: {
-    padding: Spacing.md,
+    marginBottom: Spacing.sm,
   },
   cardTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
   },
   messIcon: {
-    fontSize: 28,
-    marginRight: Spacing.sm,
+    fontSize: 24,
+    marginRight: Spacing.md,
   },
   messName: {
     fontSize: FontSize.lg,
@@ -312,38 +308,35 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   messAddress: {
-    fontSize: FontSize.xs,
+    fontSize: FontSize.sm,
     color: Colors.textMuted,
     marginTop: 2,
   },
   badge: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 3,
-    borderRadius: Radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radius.sm,
   },
   badgeActive: {
-    backgroundColor: 'rgba(76,175,125,0.15)',
-    borderWidth: 1,
-    borderColor: Colors.success,
+    backgroundColor: Colors.success + '22',
   },
   badgeInactive: {
-    backgroundColor: 'rgba(255,82,82,0.15)',
-    borderWidth: 1,
-    borderColor: Colors.error,
+    backgroundColor: Colors.error + '22',
   },
   badgeText: {
     fontSize: FontSize.xs,
-    fontWeight: FontWeight.semibold,
+    fontWeight: FontWeight.bold,
     color: Colors.text,
   },
   cardDivider: {
     height: 1,
     backgroundColor: Colors.border,
+    marginVertical: Spacing.md,
   },
   cardMeta: {
     flexDirection: 'row',
-    padding: Spacing.md,
-    gap: Spacing.md,
+    justifyContent: 'space-between',
+    marginBottom: Spacing.md,
   },
   metaItem: {
     flex: 1,
@@ -351,82 +344,76 @@ const styles = StyleSheet.create({
   metaLabel: {
     fontSize: FontSize.xs,
     color: Colors.textMuted,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   metaValue: {
     fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
+    fontWeight: FontWeight.semibold,
     color: Colors.text,
   },
   metaSubValue: {
     fontSize: FontSize.xs,
-    color: Colors.textMuted,
+    color: Colors.textSecondary,
+    marginTop: 2,
   },
   toggleBtn: {
-    padding: Spacing.sm,
+    paddingVertical: Spacing.sm,
     alignItems: 'center',
-    marginHorizontal: Spacing.md,
-    marginBottom: Spacing.md,
-    borderRadius: Radius.sm,
-  },
-  toggleBtnDeactivate: {
-    backgroundColor: 'rgba(255,82,82,0.1)',
+    borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: Colors.error,
   },
   toggleBtnActivate: {
-    backgroundColor: 'rgba(76,175,125,0.1)',
-    borderWidth: 1,
-    borderColor: Colors.success,
+    borderColor: Colors.success + '66',
+    backgroundColor: Colors.success + '11',
+  },
+  toggleBtnDeactivate: {
+    borderColor: Colors.error + '66',
+    backgroundColor: Colors.error + '11',
   },
   toggleBtnText: {
     fontSize: FontSize.sm,
-    fontWeight: FontWeight.medium,
-    color: Colors.text,
+    fontWeight: FontWeight.bold,
   },
   centered: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.xxl,
   },
   loadingText: {
     color: Colors.textMuted,
-    marginTop: Spacing.sm,
+    marginTop: Spacing.md,
   },
   empty: {
     alignItems: 'center',
-    paddingTop: Spacing.xxl,
+    marginTop: Spacing.xxl * 2,
   },
-  emptyIcon: { fontSize: 48, marginBottom: Spacing.md },
+  emptyIcon: {
+    fontSize: 48,
+    marginBottom: Spacing.md,
+  },
   emptyText: {
-    fontSize: FontSize.xl,
-    fontWeight: FontWeight.bold,
-    color: Colors.textSecondary,
-  },
-  emptySubText: {
-    fontSize: FontSize.sm,
+    fontSize: FontSize.md,
     color: Colors.textMuted,
-    marginTop: Spacing.xs,
   },
-  fab: {
+  fabContainer: {
     position: 'absolute',
     bottom: Spacing.xl,
     right: Spacing.xl,
-    width: 60,
-    height: 60,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.primary,
+    borderRadius: 32,
+    ...Shadows.large,
+  },
+  fab: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 8,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
   },
   fabIcon: {
+    color: '#fff',
     fontSize: 32,
-    color: Colors.text,
-    lineHeight: 36,
+    fontWeight: '300',
+    marginTop: -2,
   },
 });

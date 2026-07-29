@@ -11,8 +11,9 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
-import { Colors, FontSize, FontWeight, Radius, Spacing } from '../../theme/tokens';
+import { Colors, FontSize, FontWeight, Radius, Spacing, Shadows } from '../../theme/tokens';
 
 export default function LoginScreen() {
   const { signIn } = useAuth();
@@ -63,7 +64,7 @@ export default function LoginScreen() {
 
           {/* Email */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email</Text>
+            <Text style={styles.label}>Email Address</Text>
             <View style={styles.inputWrapper}>
               <Text style={styles.inputIcon}>✉️</Text>
               <TextInput
@@ -104,18 +105,25 @@ export default function LoginScreen() {
             </View>
           </View>
 
-          {/* Login Button */}
+          {/* Login Button with Gradient */}
           <TouchableOpacity
-            style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
             onPress={handleLogin}
             disabled={loading}
             activeOpacity={0.85}
+            style={styles.loginBtnContainer}
           >
-            {loading ? (
-              <ActivityIndicator color={Colors.text} />
-            ) : (
-              <Text style={styles.loginBtnText}>Sign In</Text>
-            )}
+            <LinearGradient
+              colors={[Colors.primary, Colors.primaryDark]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.loginBtnText}>Sign In</Text>
+              )}
+            </LinearGradient>
           </TouchableOpacity>
 
           <Text style={styles.hint}>
@@ -146,68 +154,66 @@ const styles = StyleSheet.create({
   logoCircle: {
     width: 80,
     height: 80,
-    borderRadius: Radius.full,
+    borderRadius: 40,
     backgroundColor: Colors.surface,
-    borderWidth: 2,
-    borderColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.md,
+    ...Shadows.soft,
   },
   logoIcon: {
-    fontSize: 36,
+    fontSize: 40,
   },
   appName: {
-    fontSize: FontSize.xxxl,
+    fontSize: FontSize.display,
     fontWeight: FontWeight.heavy,
     color: Colors.text,
-    letterSpacing: 1,
+    letterSpacing: -0.5,
   },
   tagline: {
-    fontSize: FontSize.sm,
+    fontSize: FontSize.md,
     color: Colors.textMuted,
-    marginTop: Spacing.xs,
-    letterSpacing: 0.5,
+    marginTop: 4,
+    fontWeight: FontWeight.medium,
   },
   card: {
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surface,
     borderRadius: Radius.xl,
     padding: Spacing.xl,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    ...Shadows.medium,
   },
   cardTitle: {
-    fontSize: FontSize.xxl,
+    fontSize: FontSize.xxxl,
     fontWeight: FontWeight.bold,
     color: Colors.text,
-    marginBottom: Spacing.xs,
+    marginBottom: 4,
   },
   cardSubtitle: {
-    fontSize: FontSize.sm,
-    color: Colors.textMuted,
+    fontSize: FontSize.md,
+    color: Colors.textSecondary,
     marginBottom: Spacing.xl,
   },
   inputGroup: {
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.lg,
   },
   label: {
     fontSize: FontSize.sm,
-    fontWeight: FontWeight.medium,
-    color: Colors.textSecondary,
+    color: Colors.text,
+    fontWeight: FontWeight.semibold,
     marginBottom: Spacing.xs,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
     borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.border,
     paddingHorizontal: Spacing.md,
-    height: 52,
+    height: 56,
   },
   inputIcon: {
-    fontSize: 16,
+    fontSize: FontSize.lg,
     marginRight: Spacing.sm,
   },
   input: {
@@ -220,36 +226,43 @@ const styles = StyleSheet.create({
     padding: Spacing.xs,
   },
   eyeIcon: {
-    fontSize: 16,
+    fontSize: FontSize.lg,
+  },
+  loginBtnContainer: {
+    marginTop: Spacing.md,
+    borderRadius: Radius.md,
+    shadowColor: Colors.primaryDark,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
   },
   loginBtn: {
-    backgroundColor: Colors.primary,
+    height: 56,
     borderRadius: Radius.md,
-    height: 52,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: Spacing.md,
-    marginBottom: Spacing.lg,
   },
   loginBtnDisabled: {
     opacity: 0.7,
   },
   loginBtnText: {
-    color: Colors.text,
+    color: '#fff',
     fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
     letterSpacing: 0.5,
   },
   hint: {
-    fontSize: FontSize.xs,
-    color: Colors.textMuted,
     textAlign: 'center',
-    lineHeight: 18,
+    color: Colors.textMuted,
+    fontSize: FontSize.sm,
+    marginTop: Spacing.xl,
+    lineHeight: 20,
   },
   footer: {
-    fontSize: FontSize.xs,
-    color: Colors.textMuted,
     textAlign: 'center',
-    marginTop: Spacing.xl,
+    color: Colors.textMuted,
+    fontSize: FontSize.xs,
+    marginTop: Spacing.xxl,
   },
 });

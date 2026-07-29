@@ -22,6 +22,8 @@ import SessionsScreen from '../screens/admin/SessionsScreen';
 import QRDisplayScreen from '../screens/admin/QRDisplayScreen';
 import AdminAttendanceScreen from '../screens/admin/AdminAttendanceScreen';
 import BillingScreen from '../screens/admin/BillingScreen';
+import MealSettingsScreen from '../screens/admin/MealSettingsScreen';
+import PaymentSettingsScreen from '../screens/admin/PaymentSettingsScreen';
 
 // Student screens
 import StudentDashboardScreen from '../screens/student/StudentDashboardScreen';
@@ -37,6 +39,7 @@ const screenOptions = {
   headerTintColor: Colors.text,
   headerTitleStyle: { fontWeight: '700' as const },
   contentStyle: { backgroundColor: Colors.background },
+  headerShadowVisible: false,
 };
 
 function SuperAdminNavigator() {
@@ -80,6 +83,8 @@ function AdminNavigator() {
         options={{ title: 'Attendance' }}
       />
       <Stack.Screen name="Billing" component={BillingScreen} options={{ title: 'Billing & Invoices' }} />
+      <Stack.Screen name="MealSettings" component={MealSettingsScreen} options={{ title: 'Meal Settings' }} />
+      <Stack.Screen name="PaymentSettings" component={PaymentSettingsScreen} options={{ title: 'Payment Setup' }} />
     </Stack.Navigator>
   );
 }

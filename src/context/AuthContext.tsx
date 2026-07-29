@@ -15,10 +15,12 @@ interface AuthContextValue {
   profile: Profile | null;
   role: UserRole | null;
   tenantId: string | null;
+  tenant: any | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  refreshTenant: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -28,7 +30,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [tenant, setTenant] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const fetchTenant = useCallback(async (tId: string) => {
+    const { data } = await supabase
+      .from('tenants')
+      .select('*')
+      .eq('id', tId)
+      .single();
+    return data;
+  }, []);
 
   const fetchProfile = useCallback(async (userId: string) => {
     const { data, error } = await supabase
@@ -50,6 +62,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     if (p) setProfile(p);
   }, [session, fetchProfile]);
 
+  const refreshTenant = useCallback(async () => {
+    if (!profile?.tenant_id) return;
+    const t = await fetchTenant(profile.tenant_id);
+    if (t) setTenant(t);
+  }, [profile, fetchTenant]);
+
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(async ({ data: { session: s } }) => {
@@ -57,6 +75,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       if (s?.user) {
         const p = await fetchProfile(s.user.id);
         setProfile(p);
+        if (p?.tenant_id) {
+          const t = await fetchTenant(p.tenant_id);
+          setTenant(t);
+        }
       }
       setLoading(false);
     });
@@ -68,8 +90,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         if (s?.user) {
           const p = await fetchProfile(s.user.id);
           setProfile(p);
+          if (p?.tenant_id) {
+            const t = await fetchTenant(p.tenant_id);
+            setTenant(t);
+          } else {
+            setTenant(null);
+          }
         } else {
           setProfile(null);
+          setTenant(null);
         }
         setLoading(false);
       },
@@ -91,6 +120,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const signOut = async () => {
     await supabase.auth.signOut();
     setProfile(null);
+    setTenant(null);
   };
 
   return (
@@ -101,10 +131,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         profile,
         role: profile?.role ?? null,
         tenantId: profile?.tenant_id ?? null,
+        tenant,
         loading,
         signIn,
         signOut,
         refreshProfile,
+        refreshTenant,
       }}
     >
       {children}
