@@ -2,222 +2,302 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
-  FlatList,
-  TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
+  ScrollView,
+  Switch,
   Alert,
+  RefreshControl,
+  TouchableOpacity,
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
-import { Colors, FontSize, FontWeight, Radius, Spacing } from '../../theme/tokens';
-import { MealSession } from '../../types';
+import { Colors, FontSize, FontWeight, Radius, Spacing, Shadows } from '../../theme/tokens';
+import Badge from '../../components/Badge';
 
-export default function LeaveScreen() {
-  const { user, tenantId } = useAuth();
-  const [upcomingSessions, setUpcomingSessions] = useState<MealSession[]>([]);
+const MEAL_EMOJI: Record<string, string> = { breakfast: '🌅', lunch: '☀️', dinner: '🌙' };
+const MEAL_COLORS: Record<string, string> = {
+  breakfast: Colors.breakfast,
+  lunch: Colors.lunch,
+  dinner: Colors.dinner,
+};
+
+interface StudentInfo {
+  student_id: string;
+  tenant_id: string;
+  tenant_name: string;
+  meal_types: string[];
+}
+
+interface LeaveEntry {
+  meal_type: string;
+  reason?: string;
+}
+
+export default function LeaveScreen({ navigation }: any) {
+  const { user } = useAuth();
+  const [studentInfo, setStudentInfo] = useState<StudentInfo | null>(null);
+  const [leaveStatus, setLeaveStatus] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
-  const [marking, setMarking] = useState<string | null>(null);
-  const [markedIds, setMarkedIds] = useState<string[]>([]);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const fetchSessions = useCallback(async () => {
-    if (!tenantId) return;
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const nextWeek = new Date();
-    nextWeek.setDate(nextWeek.getDate() + 7);
+  const today = new Date().toISOString().split('T')[0];
+  const todayDisplay = new Date().toLocaleDateString('en-IN', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
 
-    const { data, error } = await supabase
-      .from('meal_sessions')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .gte('session_date', tomorrow.toISOString().split('T')[0])
-      .lte('session_date', nextWeek.toISOString().split('T')[0])
-      .order('session_date')
-      .order('meal_type');
-
-    if (error) {
-      Alert.alert('Error', error.message);
-    } else {
-      setUpcomingSessions(data || []);
-    }
-
-    // Also fetch which sessions already have leave marked
-    if (user) {
-      const { data: studentData } = await supabase
-        .from('students')
-        .select('id')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      if (studentData) {
-        const { data: leaveRecords } = await supabase
-          .from('attendance_records')
-          .select('meal_session_id')
-          .eq('student_id', studentData.id)
-          .eq('status', 'leave');
-
-        setMarkedIds((leaveRecords || []).map((r: any) => r.meal_session_id));
-      }
-    }
-    setLoading(false);
-  }, [tenantId, user]);
-
-  useEffect(() => {
-    fetchSessions();
-  }, [fetchSessions]);
-
-  const markLeave = async (session: MealSession) => {
+  const fetchData = useCallback(async () => {
     if (!user) return;
-    setMarking(session.id);
     try {
-      const { data: studentData, error: sErr } = await supabase
+      // Fetch student + active subscription + tenant info
+      const { data: students, error } = await supabase
         .from('students')
-        .select('id')
+        .select(`
+          id, tenant_id,
+          tenants:tenant_id(name),
+          subscriptions!inner(plan:subscription_plans(meal_types))
+        `)
         .eq('auth_user_id', user.id)
-        .single();
-      if (sErr) throw sErr;
-
-      const { error } = await supabase.from('attendance_records').insert({
-        student_id: studentData.id,
-        meal_session_id: session.id,
-        tenant_id: tenantId,
-        status: 'leave',
-        scanned_at: new Date().toISOString(),
-        synced_offline: false,
-      });
+        .eq('is_active', true)
+        .eq('subscriptions.status', 'active')
+        .limit(1)
+        .maybeSingle();
 
       if (error) throw error;
-      setMarkedIds((prev) => [...prev, session.id]);
-      Alert.alert('✅ Leave Marked', `Leave marked for ${session.meal_type} on ${session.session_date}`);
-    } catch (err: any) {
-      if (err.message?.includes('duplicate') || err.message?.includes('unique')) {
-        Alert.alert('Already Marked', 'Leave is already marked for this session.');
-        setMarkedIds((prev) => [...prev, session.id]);
-      } else {
-        Alert.alert('Error', err.message);
+      if (!students) {
+        setStudentInfo(null);
+        setLoading(false);
+        setRefreshing(false);
+        return;
       }
+
+      const sub = (students.subscriptions as any[])?.[0];
+      const mealTypes: string[] = sub?.plan?.meal_types ?? ['breakfast', 'lunch', 'dinner'];
+
+      setStudentInfo({
+        student_id: students.id,
+        tenant_id: students.tenant_id,
+        tenant_name: (students.tenants as any)?.name ?? 'Your Mess',
+        meal_types: mealTypes,
+      });
+
+      // Fetch today's leave entries
+      const { data: leaves } = await supabase
+        .from('meal_leaves')
+        .select('meal_type')
+        .eq('student_id', students.id)
+        .eq('leave_date', today);
+
+      const leaveMap: Record<string, boolean> = {};
+      (leaves ?? []).forEach((l) => (leaveMap[l.meal_type] = true));
+      setLeaveStatus(leaveMap);
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
     } finally {
-      setMarking(null);
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [user, today]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const toggleLeave = async (mealType: string, value: boolean) => {
+    if (!studentInfo) return;
+    setSaving(mealType);
+    try {
+      if (value) {
+        await supabase
+          .from('meal_leaves')
+          .upsert(
+            {
+              student_id: studentInfo.student_id,
+              tenant_id: studentInfo.tenant_id,
+              leave_date: today,
+              meal_type: mealType,
+            },
+            { onConflict: 'student_id,leave_date,meal_type' },
+          );
+      } else {
+        await supabase
+          .from('meal_leaves')
+          .delete()
+          .eq('student_id', studentInfo.student_id)
+          .eq('leave_date', today)
+          .eq('meal_type', mealType);
+      }
+      setLeaveStatus((prev) => ({ ...prev, [mealType]: value }));
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setSaving(null);
     }
   };
 
-  const mealIcon = (m: string) => (m === 'breakfast' ? '☀️' : m === 'dinner' ? '🌙' : '🌤️');
-  const mealColor = (m: string) =>
-    m === 'breakfast' ? Colors.breakfast : m === 'dinner' ? Colors.dinner : Colors.lunch;
+  const totalOnLeave = Object.values(leaveStatus).filter(Boolean).length;
 
-  const renderItem = ({ item }: { item: MealSession }) => {
-    const isMarked = markedIds.includes(item.id);
-    const isMarking = marking === item.id;
+  if (loading) {
     return (
-      <View style={styles.card}>
-        <View style={styles.cardLeft}>
-          <Text style={styles.mealIcon}>{mealIcon(item.meal_type)}</Text>
-          <View>
-            <Text style={[styles.mealType, { color: mealColor(item.meal_type) }]}>
-              {item.meal_type.charAt(0).toUpperCase() + item.meal_type.slice(1)}
-            </Text>
-            <Text style={styles.date}>
-              {new Date(item.session_date).toLocaleDateString('en-IN', {
-                weekday: 'short', day: 'numeric', month: 'short',
-              })}
-            </Text>
-          </View>
-        </View>
-        <TouchableOpacity
-          style={[
-            styles.leaveBtn,
-            isMarked ? styles.leaveBtnMarked : styles.leaveBtnDefault,
-          ]}
-          onPress={() => !isMarked && markLeave(item)}
-          disabled={isMarked || isMarking}
-        >
-          {isMarking ? (
-            <ActivityIndicator color={Colors.text} size="small" />
-          ) : (
-            <Text style={styles.leaveBtnText}>{isMarked ? '✅ Leave Marked' : '🏖️ Mark Leave'}</Text>
-          )}
-        </TouchableOpacity>
+      <View style={styles.center}>
+        <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
-  };
+  }
+
+  if (!studentInfo) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.emptyIcon}>🍽️</Text>
+        <Text style={styles.emptyTitle}>No Active Subscription</Text>
+        <Text style={styles.emptySubtitle}>You need an active mess subscription to mark leave.</Text>
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.infoBox}>
-        <Text style={styles.infoTitle}>📋 Advance Leave Notice</Text>
-        <Text style={styles.infoText}>
-          Mark leave before a session to let your mess admin plan food quantities.
-          This also ensures fair billing — you won't be charged for meals you notified in advance.
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => { setRefreshing(true); fetchData(); }}
+          tintColor={Colors.primary}
+        />
+      }
+    >
+      {/* Header Info */}
+      <View style={styles.headerCard}>
+        <Text style={styles.headerTitle}>Skip Meal Today 🚫</Text>
+        <Text style={styles.headerDate}>{todayDisplay}</Text>
+        <Text style={styles.headerMess}>{studentInfo.tenant_name}</Text>
+        <Text style={styles.headerHint}>
+          Toggle the meals you'll be skipping today. Your mess will know not to prepare your portion.
         </Text>
       </View>
-      {loading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color={Colors.primary} size="large" />
+
+      {totalOnLeave > 0 && (
+        <View style={styles.summaryBanner}>
+          <Text style={styles.summaryText}>
+            ✅ You've marked leave for {totalOnLeave} meal{totalOnLeave !== 1 ? 's' : ''} today.
+          </Text>
         </View>
-      ) : (
-        <FlatList
-          data={upcomingSessions}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={styles.list}
-          ListEmptyComponent={
-            <View style={styles.empty}>
-              <Text style={styles.emptyIcon}>📅</Text>
-              <Text style={styles.emptyText}>No upcoming sessions scheduled</Text>
-            </View>
-          }
-        />
       )}
-    </View>
+
+      {/* Leave Toggles */}
+      <View style={styles.toggleCard}>
+        {studentInfo.meal_types.map((mealType, idx) => {
+          const isOn = !!leaveStatus[mealType];
+          const isSaving = saving === mealType;
+          const color = MEAL_COLORS[mealType] ?? Colors.primary;
+
+          return (
+            <View key={mealType} style={[styles.toggleRow, idx > 0 && styles.toggleRowBorder]}>
+              <View style={styles.toggleLeft}>
+                <View style={[styles.mealIconBg, { backgroundColor: color + '20' }]}>
+                  <Text style={styles.mealEmoji}>{MEAL_EMOJI[mealType] ?? '🍴'}</Text>
+                </View>
+                <View>
+                  <Text style={styles.mealName}>
+                    {mealType.charAt(0).toUpperCase() + mealType.slice(1)}
+                  </Text>
+                  {isOn ? (
+                    <Badge label="Skipping Today" variant="error" />
+                  ) : (
+                    <Badge label="Eating Today" variant="success" />
+                  )}
+                </View>
+              </View>
+              <Switch
+                value={isOn}
+                onValueChange={(val) => toggleLeave(mealType, val)}
+                disabled={isSaving}
+                trackColor={{ false: Colors.border, true: Colors.error + 'AA' }}
+                thumbColor={isOn ? Colors.error : '#f4f3f4'}
+              />
+            </View>
+          );
+        })}
+      </View>
+
+      {/* Informational Note */}
+      <View style={styles.noteCard}>
+        <Text style={styles.noteTitle}>ℹ️ How it works</Text>
+        <Text style={styles.noteText}>• Toggle OFF to skip a meal today.</Text>
+        <Text style={styles.noteText}>• Your mess admin sees a live headcount for planning.</Text>
+        <Text style={styles.noteText}>• You can change your mind anytime during the day.</Text>
+        <Text style={styles.noteText}>• Marked leaves are automatically reset the next day.</Text>
+        <Text style={styles.noteText}>• This does NOT deduct from your subscription days.</Text>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  infoBox: {
-    backgroundColor: Colors.primary + '15',
+  content: { padding: Spacing.lg, paddingBottom: Spacing.xxl },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
+  loadingText: { color: Colors.textMuted, fontSize: FontSize.md },
+  emptyIcon: { fontSize: 48, marginBottom: Spacing.md },
+  emptyTitle: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.text, marginBottom: Spacing.sm },
+  emptySubtitle: { fontSize: FontSize.md, color: Colors.textMuted, textAlign: 'center', lineHeight: 22 },
+
+  headerCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
+    padding: Spacing.lg,
+    marginBottom: Spacing.md,
     borderWidth: 1,
-    borderColor: Colors.primary + '50',
-    borderRadius: Radius.lg,
-    margin: Spacing.lg,
-    padding: Spacing.md,
+    borderColor: Colors.border,
+    ...Shadows.soft,
   },
-  infoTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.primary, marginBottom: 4 },
-  infoText: { fontSize: FontSize.sm, color: Colors.textSecondary, lineHeight: 20 },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  list: { paddingHorizontal: Spacing.lg, paddingBottom: 40 },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: Colors.card,
+  headerTitle: { fontSize: FontSize.xxl, fontWeight: FontWeight.heavy, color: Colors.text },
+  headerDate: { fontSize: FontSize.md, color: Colors.primary, fontWeight: FontWeight.semibold, marginTop: 4 },
+  headerMess: { fontSize: FontSize.sm, color: Colors.textMuted, marginTop: 2 },
+  headerHint: { fontSize: FontSize.sm, color: Colors.textSecondary, lineHeight: 20, marginTop: Spacing.md },
+
+  summaryBanner: {
+    backgroundColor: Colors.success + '15',
     borderRadius: Radius.md,
     padding: Spacing.md,
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.md,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.success,
+  },
+  summaryText: { color: '#065f46', fontWeight: FontWeight.semibold, fontSize: FontSize.sm },
+
+  toggleCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+    marginBottom: Spacing.xl,
+    ...Shadows.soft,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: Spacing.lg,
+  },
+  toggleRowBorder: { borderTopWidth: 1, borderTopColor: Colors.borderLight },
+  toggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  mealIconBg: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
+  mealEmoji: { fontSize: 22 },
+  mealName: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.text, marginBottom: 4 },
+
+  noteCard: {
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: Radius.lg,
+    padding: Spacing.lg,
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  cardLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  mealIcon: { fontSize: 28 },
-  mealType: { fontSize: FontSize.md, fontWeight: FontWeight.bold },
-  date: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2 },
-  leaveBtn: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-  },
-  leaveBtnDefault: {
-    backgroundColor: Colors.warning + '15',
-    borderColor: Colors.warning,
-  },
-  leaveBtnMarked: {
-    backgroundColor: Colors.success + '15',
-    borderColor: Colors.success,
-  },
-  leaveBtnText: { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: Colors.text },
-  empty: { alignItems: 'center', paddingTop: Spacing.xxl },
-  emptyIcon: { fontSize: 48, marginBottom: Spacing.md },
-  emptyText: { fontSize: FontSize.lg, color: Colors.textMuted },
+  noteTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.text, marginBottom: Spacing.md },
+  noteText: { fontSize: FontSize.sm, color: Colors.textMuted, lineHeight: 24 },
 });

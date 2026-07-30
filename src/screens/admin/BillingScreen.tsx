@@ -8,8 +8,9 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  Linking,
 } from 'react-native';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
@@ -156,6 +157,23 @@ export default function BillingScreen() {
     );
   };
 
+  const shareViaWhatsApp = (row: StudentBillingRow) => {
+    const periodLabel = new Date(periodStartStr).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+    const message =
+      `*MessTrack Invoice 🧾*\n` +
+      `Student: ${row.student_name}\n` +
+      `Period: ${periodLabel}\n` +
+      `Plan: ${row.plan_name}\n` +
+      `Days Present: ${row.days_present_this_month}\n` +
+      `Rate/Day: ₹${row.rate_per_day.toFixed(0)}\n` +
+      `*Total Due: ₹${row.total_due.toFixed(0)}*\n\n` +
+      `Please make your payment at the earliest. Thank you! 🙏`;
+    const url = `whatsapp://send?text=${encodeURIComponent(message)}`;
+    Linking.openURL(url).catch(() => {
+      Alert.alert('WhatsApp not found', 'Please install WhatsApp to use this feature.');
+    });
+  };
+
   const exportCSV = async () => {
     if (!tenantId) return;
     try {
@@ -245,26 +263,43 @@ export default function BillingScreen() {
       </View>
 
       {item.existing_invoice_id ? (
-        <View style={[styles.invoicedBadge, { borderColor: statusColor(item.invoice_status) }]}>
-          <Text style={[styles.invoicedText, { color: statusColor(item.invoice_status) }]}>
-            Invoice {item.invoice_status?.toUpperCase()}
-          </Text>
+        <View style={styles.invoicedRow}>
+          <View style={[styles.invoicedBadge, { borderColor: statusColor(item.invoice_status) }]}>
+            <Text style={[styles.invoicedText, { color: statusColor(item.invoice_status) }]}>
+              Invoice {item.invoice_status?.toUpperCase()}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.whatsappBtn}
+            onPress={() => shareViaWhatsApp(item)}
+          >
+            <Text style={styles.whatsappBtnText}>📲 WhatsApp</Text>
+          </TouchableOpacity>
         </View>
       ) : (
-        <TouchableOpacity
-          style={styles.generateBtn}
-          onPress={() => generateInvoice(item)}
-          disabled={generatingId === item.student_id}
-        >
-          {generatingId === item.student_id ? (
-            <ActivityIndicator color={Colors.text} size="small" />
-          ) : (
-            <Text style={styles.generateBtnText}>🧾 Generate Invoice</Text>
-          )}
-        </TouchableOpacity>
+        <View style={styles.invoicedRow}>
+          <TouchableOpacity
+            style={[styles.generateBtn, { flex: 1 }]}
+            onPress={() => generateInvoice(item)}
+            disabled={generatingId === item.student_id}
+          >
+            {generatingId === item.student_id ? (
+              <ActivityIndicator color={Colors.text} size="small" />
+            ) : (
+              <Text style={styles.generateBtnText}>🧾 Generate Invoice</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.whatsappBtn}
+            onPress={() => shareViaWhatsApp(item)}
+          >
+            <Text style={styles.whatsappBtnText}>📲</Text>
+          </TouchableOpacity>
+        </View>
       )}
     </View>
   );
+
 
   return (
     <View style={styles.container}>
@@ -412,6 +447,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   invoicedText: { fontSize: FontSize.sm, fontWeight: FontWeight.bold },
+  invoicedRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  whatsappBtn: {
+    backgroundColor: '#25D366',
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  whatsappBtnText: { color: '#ffffff', fontSize: FontSize.sm, fontWeight: FontWeight.bold },
   empty: { alignItems: 'center', paddingTop: Spacing.xxl },
   emptyIcon: { fontSize: 48, marginBottom: Spacing.md },
   emptyText: { fontSize: FontSize.lg, color: Colors.textMuted },

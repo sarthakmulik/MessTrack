@@ -1,9 +1,10 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { ActivityIndicator, View } from 'react-native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { ActivityIndicator, View, Text, Platform } from 'react-native';
 import { useAuth } from '../context/AuthContext';
-import { Colors } from '../theme/tokens';
+import { Colors, FontSize, FontWeight } from '../theme/tokens';
 
 // Auth screens
 import LoginScreen from '../screens/auth/LoginScreen';
@@ -24,6 +25,7 @@ import AdminAttendanceScreen from '../screens/admin/AdminAttendanceScreen';
 import BillingScreen from '../screens/admin/BillingScreen';
 import MealSettingsScreen from '../screens/admin/MealSettingsScreen';
 import PaymentSettingsScreen from '../screens/admin/PaymentSettingsScreen';
+import MenuScreen from '../screens/admin/MenuScreen';
 
 // Student screens
 import StudentDashboardScreen from '../screens/student/StudentDashboardScreen';
@@ -33,18 +35,22 @@ import LeaveScreen from '../screens/student/LeaveScreen';
 import StudentInvoicesScreen from '../screens/student/StudentInvoicesScreen';
 
 const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
 
-const screenOptions = {
+const stackScreenOptions = {
   headerStyle: { backgroundColor: Colors.surface },
   headerTintColor: Colors.text,
-  headerTitleStyle: { fontWeight: '700' as const },
+  headerTitleStyle: { fontWeight: '700' as const, fontSize: FontSize.md },
   contentStyle: { backgroundColor: Colors.background },
   headerShadowVisible: false,
 };
 
+// ─────────────────────────────────────────────
+// SUPER ADMIN
+// ─────────────────────────────────────────────
 function SuperAdminNavigator() {
   return (
-    <Stack.Navigator screenOptions={screenOptions}>
+    <Stack.Navigator screenOptions={stackScreenOptions}>
       <Stack.Screen
         name="SuperDashboard"
         component={SuperDashboardScreen}
@@ -59,13 +65,16 @@ function SuperAdminNavigator() {
   );
 }
 
+// ─────────────────────────────────────────────
+// MESS ADMIN
+// ─────────────────────────────────────────────
 function AdminNavigator() {
   return (
-    <Stack.Navigator screenOptions={screenOptions}>
+    <Stack.Navigator screenOptions={stackScreenOptions}>
       <Stack.Screen
         name="AdminDashboard"
         component={AdminDashboardScreen}
-        options={{ title: 'Dashboard' }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen name="Students" component={StudentsScreen} options={{ title: 'Students' }} />
       <Stack.Screen name="AddStudent" component={AddStudentScreen} options={{ title: 'Add Student' }} />
@@ -77,37 +86,71 @@ function AdminNavigator() {
         component={QRDisplayScreen}
         options={{ title: 'Live QR', headerShown: false }}
       />
-      <Stack.Screen
-        name="AdminAttendance"
-        component={AdminAttendanceScreen}
-        options={{ title: 'Attendance' }}
-      />
+      <Stack.Screen name="AdminAttendance" component={AdminAttendanceScreen} options={{ title: 'Attendance' }} />
       <Stack.Screen name="Billing" component={BillingScreen} options={{ title: 'Billing & Invoices' }} />
       <Stack.Screen name="MealSettings" component={MealSettingsScreen} options={{ title: 'Meal Settings' }} />
       <Stack.Screen name="PaymentSettings" component={PaymentSettingsScreen} options={{ title: 'Payment Setup' }} />
+      <Stack.Screen name="Menu" component={MenuScreen} options={{ title: "Today's Menu" }} />
     </Stack.Navigator>
   );
 }
 
-function StudentNavigator() {
+// ─────────────────────────────────────────────
+// STUDENT — Bottom Tab Navigation
+// ─────────────────────────────────────────────
+
+// Each tab gets its own mini stack so we can push screens from within tabs
+function HomeTab() {
   return (
-    <Stack.Navigator screenOptions={screenOptions}>
+    <Stack.Navigator screenOptions={stackScreenOptions}>
       <Stack.Screen
         name="StudentDashboard"
         component={StudentDashboardScreen}
-        options={{ title: 'My Mess' }}
+        options={{ headerShown: false }}
       />
+    </Stack.Navigator>
+  );
+}
+
+function ScanTab() {
+  return (
+    <Stack.Navigator screenOptions={stackScreenOptions}>
       <Stack.Screen
         name="Scan"
         component={ScanScreen}
         options={{ title: 'Scan QR', headerShown: false }}
       />
+    </Stack.Navigator>
+  );
+}
+
+function HistoryTab() {
+  return (
+    <Stack.Navigator screenOptions={stackScreenOptions}>
       <Stack.Screen
         name="AttendanceHistory"
         component={AttendanceHistoryScreen}
         options={{ title: 'My Attendance' }}
       />
-      <Stack.Screen name="Leave" component={LeaveScreen} options={{ title: 'Mark Leave' }} />
+    </Stack.Navigator>
+  );
+}
+
+function LeaveTab() {
+  return (
+    <Stack.Navigator screenOptions={stackScreenOptions}>
+      <Stack.Screen
+        name="Leave"
+        component={LeaveScreen}
+        options={{ title: 'Skip Meal' }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+function BillsTab() {
+  return (
+    <Stack.Navigator screenOptions={stackScreenOptions}>
       <Stack.Screen
         name="StudentInvoices"
         component={StudentInvoicesScreen}
@@ -117,13 +160,93 @@ function StudentNavigator() {
   );
 }
 
+function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
+  return (
+    <Text style={{ fontSize: focused ? 22 : 20, opacity: focused ? 1 : 0.55 }}>{emoji}</Text>
+  );
+}
+
+function StudentNavigator() {
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: {
+          backgroundColor: Colors.surface,
+          borderTopColor: Colors.border,
+          borderTopWidth: 1,
+          height: Platform.OS === 'ios' ? 85 : 65,
+          paddingBottom: Platform.OS === 'ios' ? 28 : 10,
+          paddingTop: 8,
+        },
+        tabBarActiveTintColor: Colors.primary,
+        tabBarInactiveTintColor: Colors.textMuted,
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '600' as const,
+          marginTop: 2,
+        },
+      }}
+    >
+      <Tab.Screen
+        name="HomeTab"
+        component={HomeTab}
+        options={{
+          tabBarLabel: 'Home',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🏠" focused={focused} />,
+        }}
+      />
+      <Tab.Screen
+        name="ScanTab"
+        component={ScanTab}
+        options={{
+          tabBarLabel: 'Scan QR',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="📷" focused={focused} />,
+        }}
+      />
+      <Tab.Screen
+        name="HistoryTab"
+        component={HistoryTab}
+        options={{
+          tabBarLabel: 'History',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="📅" focused={focused} />,
+        }}
+      />
+      <Tab.Screen
+        name="LeaveTab"
+        component={LeaveTab}
+        options={{
+          tabBarLabel: 'Skip Meal',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🚫" focused={focused} />,
+        }}
+      />
+      <Tab.Screen
+        name="BillsTab"
+        component={BillsTab}
+        options={{
+          tabBarLabel: 'Bills',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🧾" focused={focused} />,
+        }}
+      />
+    </Tab.Navigator>
+  );
+}
+
+// ─────────────────────────────────────────────
+// ROOT
+// ─────────────────────────────────────────────
 export default function RootNavigator() {
   const { session, role, loading } = useAuth();
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background }}>
+      <View
+        style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background }}
+      >
         <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={{ color: Colors.textMuted, marginTop: 16, fontSize: FontSize.sm }}>
+          Loading MessTrack...
+        </Text>
       </View>
     );
   }
@@ -131,7 +254,6 @@ export default function RootNavigator() {
   return (
     <NavigationContainer>
       {!session ? (
-        // Not logged in — show auth
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="Login" component={LoginScreen} />
         </Stack.Navigator>
