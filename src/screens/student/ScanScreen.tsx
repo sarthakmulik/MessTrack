@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
     padding: Spacing.xl,
   },
   overlay: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
   },
@@ -296,7 +296,7 @@ const styles = StyleSheet.create({
   cornerBL: { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0 },
   cornerBR: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0 },
   processingOverlay: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.7)',
     borderRadius: Radius.md,
     justifyContent: 'center',
