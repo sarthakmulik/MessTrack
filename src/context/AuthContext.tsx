@@ -85,7 +85,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
     // Listen for auth state changes
     const { data: listener } = supabase.auth.onAuthStateChange(
-      async (_event, s) => {
+      async (event, s) => {
+        // Handle token refresh failures — auto sign-out to prevent broken state
+        if (event === 'TOKEN_REFRESHED' && !s) {
+          console.warn('Token refresh failed, signing out...');
+          await supabase.auth.signOut();
+          setSession(null);
+          setProfile(null);
+          setTenant(null);
+          setLoading(false);
+          return;
+        }
+
+        if (event === 'SIGNED_OUT') {
+          setSession(null);
+          setProfile(null);
+          setTenant(null);
+          setLoading(false);
+          return;
+        }
+
         setSession(s);
         if (s?.user) {
           const p = await fetchProfile(s.user.id);

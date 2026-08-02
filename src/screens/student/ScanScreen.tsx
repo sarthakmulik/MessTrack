@@ -28,7 +28,7 @@ interface ScanResult {
 }
 
 export default function ScanScreen({ navigation }: any) {
-  const { user, tenantId } = useAuth();
+  const { user, tenantId, signOut } = useAuth();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -107,29 +107,57 @@ export default function ScanScreen({ navigation }: any) {
       });
 
       if (error) {
-        // Network error
-        if (error.message?.includes('network') || error.message?.includes('fetch')) {
-          const msg = '📶 No internet connection. Please connect to the internet to scan.';
+        // Detect auth expiry specifically
+        const errMsg = error.message || '';
+        if (
+          errMsg.includes('401') ||
+          errMsg.includes('unauthorized') ||
+          errMsg.toLowerCase().includes('jwt') ||
+          errMsg.toLowerCase().includes('authentication')
+        ) {
+          Alert.alert(
+            'Session Expired',
+            'Your login session has expired. Please sign in again.',
+            [
+              {
+                text: 'Sign In',
+                onPress: async () => {
+                  await signOut();
+                },
+              },
+            ]
+          );
+          setResult({ success: false, message: '🔒 Session expired. Please sign in again.' });
+        } else if (errMsg.includes('network') || errMsg.includes('fetch') || errMsg.includes('Failed to fetch')) {
+          const msg = '📶 No internet connection. Please check your connection and try again.';
           setResult({ success: false, message: msg });
-          Alert.alert('Error', msg);
+          Alert.alert('No Connection', msg);
         } else {
-          const msg = error.message || 'Scan failed. Please try again.';
+          const msg = errMsg || 'Scan failed. Please try again.';
           setResult({ success: false, message: msg });
-          Alert.alert('Error', msg);
+          Alert.alert('Scan Error', msg);
         }
       } else if (responseData?.success) {
         const msg = `✅ Attendance marked for ${responseData.meal_type || 'this meal'}!`;
         setResult({ success: true, message: msg, meal_type: responseData.meal_type });
-        Alert.alert('Success!', msg);
+        Alert.alert('Success! 🎉', msg);
       } else {
+        // Business logic rejection (e.g. already scanned, wrong plan, fake GPS, etc.)
         const msg = responseData?.message || 'Scan rejected. Please contact your mess admin.';
         setResult({ success: false, message: msg });
         Alert.alert('Scan Rejected', msg);
       }
     } catch (err: any) {
-      const msg = '📶 No internet connection or server error.';
-      setResult({ success: false, message: msg });
-      Alert.alert('Error', msg);
+      const errMsg = err?.message || '';
+      if (errMsg.includes('fetch') || errMsg.includes('network') || errMsg.includes('Failed to fetch')) {
+        const msg = '📶 No internet connection. Please check your connection.';
+        setResult({ success: false, message: msg });
+        Alert.alert('No Connection', msg);
+      } else {
+        const msg = '⚠️ Something went wrong. Please try again.';
+        setResult({ success: false, message: msg });
+        Alert.alert('Error', errMsg || msg);
+      }
     } finally {
       setProcessing(false);
       // Reset scanner after 3 seconds
