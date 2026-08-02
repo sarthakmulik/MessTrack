@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  Platform,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import * as ScreenCapture from 'expo-screen-capture';
@@ -33,7 +34,14 @@ const mealColor: Record<string, string> = {
 
 export default function QRDisplayScreen({ route, navigation }: any) {
   // ── Prevent Screenshots (Anti-Fraud) ──
-  ScreenCapture.usePreventScreenCapture();
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
+      ScreenCapture.preventScreenCaptureAsync().catch(() => {});
+      return () => {
+        ScreenCapture.allowScreenCaptureAsync().catch(() => {});
+      };
+    }
+  }, []);
 
   const { sessionId } = route.params as { sessionId: string };
   const { tenantId } = useAuth();
