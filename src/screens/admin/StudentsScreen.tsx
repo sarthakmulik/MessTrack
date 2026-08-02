@@ -8,9 +8,13 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
-  TextInput,
   Modal,
 } from 'react-native';
+import { Card } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
+import { Badge } from '../../components/ui/Badge';
+import { LoadingState } from '../../components/ui/LoadingState';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadows } from '../../theme/tokens';
@@ -18,12 +22,12 @@ import { Student, Subscription, SubscriptionPlan } from '../../types';
 
 interface StudentWithSub extends Student {
   is_active: boolean; // Added for soft delete
-  subscription?: {
+  active_subscriptions: {
     id: string;
     status: string;
     end_date: string;
     plan_name?: string;
-  };
+  }[];
 }
 
 export default function StudentsScreen({ navigation }: { navigation: any }) {
@@ -60,21 +64,18 @@ export default function StudentsScreen({ navigation }: { navigation: any }) {
       if (error) throw error;
 
       const mapped: StudentWithSub[] = (data ?? []).map((s: any) => {
-        // Find the active subscription if any
-        const activeSub = (s.subscriptions || []).find((sub: any) => sub.status === 'active') 
-            || (s.subscriptions || [])[0];
+        // Find all active subscriptions
+        const activeSubs = (s.subscriptions || []).filter((sub: any) => sub.status === 'active').map((sub: any) => ({
+            id: sub.id,
+            status: sub.status,
+            end_date: sub.end_date,
+            plan_name: sub.subscription_plans?.name,
+        }));
 
         return {
           ...s,
           is_active: s.is_active ?? true,
-          subscription: activeSub
-            ? {
-                id: activeSub.id,
-                status: activeSub.status,
-                end_date: activeSub.end_date,
-                plan_name: activeSub.subscription_plans?.name,
-              }
-            : undefined,
+          active_subscriptions: activeSubs,
         };
       });
 
@@ -192,50 +193,64 @@ export default function StudentsScreen({ navigation }: { navigation: any }) {
   const assignPlanToStudent = async (plan: SubscriptionPlan) => {
     if (!selectedStudent || !tenantId) return;
 
-    Alert.alert(
-      'Assign Plan',
-      `Assign "${plan.name}" to ${selectedStudent.name}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Assign',
-          onPress: async () => {
-            setPlanModalVisible(false);
-            try {
-              // 1. Mark existing active subscriptions as cancelled
-              await supabase
-                .from('subscriptions')
-                .update({ status: 'cancelled' })
-                .eq('student_id', selectedStudent.id)
-                .eq('status', 'active');
+    // If student already has active subscriptions, ask whether to Replace or Add
+    if (selectedStudent.active_subscriptions.length > 0) {
+      Alert.alert(
+        'Assign Plan',
+        `Does this new "${plan.name}" replace the current plan, or run alongside it?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Replace Current', style: 'destructive', onPress: () => processAssignPlan(plan, true) },
+          { text: 'Run Alongside (Overlap)', onPress: () => processAssignPlan(plan, false) },
+        ]
+      );
+    } else {
+      Alert.alert(
+        'Assign Plan',
+        `Assign "${plan.name}" to ${selectedStudent.name}?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Assign', onPress: () => processAssignPlan(plan, false) }
+        ]
+      );
+    }
+  };
 
-              // 2. Create new subscription
-              const startDate = new Date();
-              const endDate = new Date();
-              endDate.setDate(startDate.getDate() + plan.duration_days);
+  const processAssignPlan = async (plan: SubscriptionPlan, replaceExisting: boolean) => {
+    setPlanModalVisible(false);
+    try {
+      if (replaceExisting) {
+        // 1. Mark existing active subscriptions as cancelled
+        await supabase
+          .from('subscriptions')
+          .update({ status: 'cancelled' })
+          .eq('student_id', selectedStudent!.id)
+          .eq('status', 'active');
+      }
 
-              const { error } = await supabase
-                .from('subscriptions')
-                .insert({
-                  student_id: selectedStudent.id,
-                  plan_id: plan.id,
-                  tenant_id: tenantId,
-                  start_date: startDate.toISOString().split('T')[0],
-                  end_date: endDate.toISOString().split('T')[0],
-                  status: 'active',
-                  amount_paid: 0,
-                });
+      // 2. Create new subscription
+      const startDate = new Date();
+      const endDate = new Date();
+      endDate.setDate(startDate.getDate() + plan.duration_days);
 
-              if (error) throw error;
-              Alert.alert('Success', 'Plan assigned successfully!');
-              fetchStudents();
-            } catch (err: any) {
-              Alert.alert('Error', err.message);
-            }
-          }
-        }
-      ]
-    );
+      const { error } = await supabase
+        .from('subscriptions')
+        .insert({
+          student_id: selectedStudent!.id,
+          plan_id: plan.id,
+          tenant_id: tenantId,
+          start_date: startDate.toISOString().split('T')[0],
+          end_date: endDate.toISOString().split('T')[0],
+          status: 'active',
+          amount_paid: 0,
+        });
+
+      if (error) throw error;
+      Alert.alert('Success', 'Plan assigned successfully!');
+      fetchStudents();
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    }
   };
 
   const handleStudentPress = (student: StudentWithSub) => {
@@ -255,20 +270,10 @@ export default function StudentsScreen({ navigation }: { navigation: any }) {
     );
   };
 
-  const statusColor = (status?: string) => {
-    switch (status) {
-      case 'active': return Colors.success;
-      case 'expired': return Colors.error;
-      case 'cancelled': return Colors.textMuted;
-      default: return Colors.textMuted;
-    }
-  };
-
   const renderStudent = ({ item }: { item: StudentWithSub }) => (
-    <TouchableOpacity 
+    <Card 
       style={[styles.card, !item.is_active && styles.cardInactive]}
       onPress={() => handleStudentPress(item)}
-      activeOpacity={0.7}
     >
       <View style={[styles.avatar, !item.is_active && { backgroundColor: Colors.border }]}>
         <Text style={styles.avatarText}>{item.name[0].toUpperCase()}</Text>
@@ -280,42 +285,43 @@ export default function StudentsScreen({ navigation }: { navigation: any }) {
         <Text style={styles.studentEmail}>{item.email}</Text>
         {item.phone ? <Text style={styles.studentPhone}>📱 {item.phone}</Text> : null}
         
-        {item.subscription ? (
-          <View style={styles.subRow}>
-            <View style={[styles.subBadge, { backgroundColor: statusColor(item.subscription.status) + '22', borderColor: statusColor(item.subscription.status) + '66' }]}>
-              <Text style={[styles.subBadgeText, { color: statusColor(item.subscription.status) }]}>
-                {item.subscription.status.toUpperCase()}
-              </Text>
+        {item.active_subscriptions.length > 0 ? (
+          item.active_subscriptions.map((sub, idx) => (
+            <View key={sub.id} style={styles.subRow}>
+              <Badge 
+                label={sub.status} 
+                variant={
+                  sub.status === 'active' ? 'success' :
+                  sub.status === 'expired' ? 'error' : 'default'
+                }
+                style={{ marginRight: 8 }}
+              />
+              {sub.plan_name ? (
+                <Text style={styles.planName}>{sub.plan_name}</Text>
+              ) : null}
             </View>
-            {item.subscription.plan_name ? (
-              <Text style={styles.planName}>{item.subscription.plan_name}</Text>
-            ) : null}
-          </View>
+          ))
         ) : (
           <View style={styles.subRow}>
-            <View style={[styles.subBadge, { backgroundColor: Colors.textMuted + '22', borderColor: Colors.textMuted + '44' }]}>
-              <Text style={[styles.subBadgeText, { color: Colors.textMuted }]}>NO PLAN</Text>
-            </View>
+            <Badge label="NO PLAN" variant="default" style={{ marginRight: 8 }} />
           </View>
         )}
       </View>
-    </TouchableOpacity>
+    </Card>
   );
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TextInput
-          style={styles.searchInput}
+        <Input
           placeholder="Search students..."
-          placeholderTextColor={Colors.textMuted}
           value={search}
           onChangeText={setSearch}
         />
       </View>
       
       {loading ? (
-        <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: Spacing.xl }} />
+        <LoadingState fullScreen={false} />
       ) : (
         <FlatList
           data={filtered}
@@ -338,7 +344,7 @@ export default function StudentsScreen({ navigation }: { navigation: any }) {
             <Text style={styles.modalTitle}>Assign Plan to {selectedStudent?.name}</Text>
             
             {loadingPlans ? (
-              <ActivityIndicator size="small" color={Colors.primary} style={{ margin: Spacing.lg }} />
+              <LoadingState fullScreen={false} />
             ) : plans.length === 0 ? (
               <Text style={styles.emptyText}>No active plans found. Create one first.</Text>
             ) : (
@@ -347,28 +353,30 @@ export default function StudentsScreen({ navigation }: { navigation: any }) {
                 keyExtractor={(item) => item.id}
                 style={{ maxHeight: 300 }}
                 renderItem={({ item }) => (
-                  <TouchableOpacity 
-                    style={styles.planOption}
-                    onPress={() => assignPlanToStudent(item)}
-                  >
+                  <View style={styles.planOption}>
                     <View>
                       <Text style={styles.planOptionName}>{item.name}</Text>
                       <Text style={styles.planOptionDetails}>
                         ₹{item.price} • {item.duration_days} Days
                       </Text>
                     </View>
-                    <Text style={styles.assignBtn}>Assign</Text>
-                  </TouchableOpacity>
+                    <Button 
+                      title="Assign" 
+                      size="small"
+                      fullWidth={false}
+                      onPress={() => assignPlanToStudent(item)} 
+                    />
+                  </View>
                 )}
               />
             )}
             
-            <TouchableOpacity 
-              style={styles.closeModalBtn}
+            <Button 
+              title="Close"
+              variant="outline"
+              style={{ marginTop: Spacing.lg }}
               onPress={() => setPlanModalVisible(false)}
-            >
-              <Text style={styles.closeModalBtnText}>Close</Text>
-            </TouchableOpacity>
+            />
           </View>
         </View>
       </Modal>
@@ -395,26 +403,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
-  searchInput: {
-    backgroundColor: Colors.background,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    color: Colors.text,
-    fontSize: FontSize.md,
-  },
   listContent: {
     padding: Spacing.md,
     paddingBottom: 100,
   },
   card: {
     flexDirection: 'row',
-    backgroundColor: Colors.surface,
-    padding: Spacing.md,
-    borderRadius: Radius.lg,
-    marginBottom: Spacing.md,
-    ...Shadows.soft,
   },
   cardInactive: {
     opacity: 0.6,
@@ -457,17 +451,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 4,
-  },
-  subBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-    marginRight: 8,
-  },
-  subBadgeText: {
-    fontSize: FontSize.xs,
-    fontWeight: FontWeight.bold,
   },
   planName: {
     color: Colors.text,
@@ -538,22 +521,5 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: FontSize.sm,
     marginTop: 4,
-  },
-  assignBtn: {
-    color: Colors.primary,
-    fontWeight: FontWeight.bold,
-    fontSize: FontSize.md,
-  },
-  closeModalBtn: {
-    marginTop: Spacing.lg,
-    padding: Spacing.md,
-    alignItems: 'center',
-    backgroundColor: Colors.background,
-    borderRadius: Radius.md,
-  },
-  closeModalBtnText: {
-    color: Colors.text,
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.semibold,
   }
 });

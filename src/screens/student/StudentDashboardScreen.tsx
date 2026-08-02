@@ -14,10 +14,12 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { Colors, FontSize, FontWeight, Radius, Spacing, Shadows } from '../../theme/tokens';
 import { LinearGradient } from 'expo-linear-gradient';
-import Badge from '../../components/Badge';
+import { Card } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { Badge } from '../../components/ui/Badge';
+import { LoadingState } from '../../components/ui/LoadingState';
 import { DashboardSkeleton } from '../../components/SkeletonLoader';
 import EmptyState from '../../components/EmptyState';
-import MealChip from '../../components/MealChip';
 
 const MEAL_COLORS: Record<string, string> = {
   breakfast: Colors.breakfast,
@@ -112,28 +114,28 @@ export default function StudentDashboardScreen({ navigation }: any) {
 
       const cardsList: MessCard[] = [];
       for (const r of studentRecords) {
-        const sub = (r.subscriptions as any[])?.[0];
-        if (!sub) continue;
+        const subs = (r.subscriptions as any[]) || [];
+        for (const sub of subs) {
+          const endDate = new Date(sub.end_date);
+          const daysRemaining = Math.max(
+            0,
+            Math.ceil((endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
+          );
 
-        const endDate = new Date(sub.end_date);
-        const daysRemaining = Math.max(
-          0,
-          Math.ceil((endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
-        );
+          tenantIdMap[r.tenant_id] = r.id;
 
-        tenantIdMap[r.tenant_id] = r.id;
-
-        cardsList.push({
-          student_id: r.id,
-          tenant_id: r.tenant_id,
-          tenant_name: (r.tenants as any)?.name ?? 'Mess',
-          plan_name: sub.plan?.name ?? 'Plan',
-          days_remaining: daysRemaining,
-          attendance_this_month: countMap[r.id] ?? 0,
-          meal_types: sub.plan?.meal_types ?? [],
-          meal_configs: (r.tenants as any)?.meal_configs ?? {},
-          end_date: sub.end_date,
-        });
+          cardsList.push({
+            student_id: r.id,
+            tenant_id: r.tenant_id,
+            tenant_name: (r.tenants as any)?.name ?? 'Mess',
+            plan_name: sub.plan?.name ?? 'Plan',
+            days_remaining: daysRemaining,
+            attendance_this_month: countMap[r.id] ?? 0,
+            meal_types: sub.plan?.meal_types ?? [],
+            meal_configs: (r.tenants as any)?.meal_configs ?? {},
+            end_date: sub.end_date,
+          });
+        }
       }
 
       setCards(cardsList);
@@ -213,11 +215,7 @@ export default function StudentDashboardScreen({ navigation }: any) {
   };
 
   if (loading) {
-    return (
-      <View style={styles.container}>
-        <DashboardSkeleton />
-      </View>
-    );
+    return <LoadingState message="Loading dashboard..." fullScreen />;
   }
 
   const primaryCard = cards[0];
@@ -303,14 +301,14 @@ export default function StudentDashboardScreen({ navigation }: any) {
           ))}
 
           {/* Skip Meal Today — Quick Toggle */}
-          {primaryCard && primaryCard.meal_types.length > 0 && (
+          {primaryCard && (
             <>
               <Text style={styles.sectionTitle}>Skip Meal Today?</Text>
-              <View style={styles.leaveCard}>
+              <Card style={styles.leaveCard}>
                 <Text style={styles.leaveCardSubtitle}>
                   Let your mess know you're skipping. Helps them reduce food waste. ♻️
                 </Text>
-                {primaryCard.meal_types.map((mealType) => (
+                {Array.from(new Set(cards.filter(c => c.tenant_id === primaryCard.tenant_id).flatMap(c => c.meal_types))).map((mealType) => (
                   <View key={mealType} style={styles.leaveRow}>
                     <View style={styles.leaveRowLeft}>
                       <Text style={styles.leaveEmoji}>{MEAL_EMOJI[mealType] ?? '🍴'}</Text>
@@ -327,7 +325,7 @@ export default function StudentDashboardScreen({ navigation }: any) {
                     />
                   </View>
                 ))}
-              </View>
+              </Card>
             </>
           )}
 
@@ -336,12 +334,12 @@ export default function StudentDashboardScreen({ navigation }: any) {
             <>
               <Text style={styles.sectionTitle}>Today's Menu 🍛</Text>
               {todayMenus.map((menu) => (
-                <View key={menu.meal_type} style={styles.menuCard}>
+                <Card key={menu.meal_type} style={styles.menuCard}>
                   <Text style={[styles.menuMealType, { color: MEAL_COLORS[menu.meal_type] ?? Colors.text }]}>
                     {MEAL_EMOJI[menu.meal_type]} {menu.meal_type.charAt(0).toUpperCase() + menu.meal_type.slice(1)}
                   </Text>
                   <Text style={styles.menuItems}>{menu.items.join(' · ')}</Text>
-                </View>
+                </Card>
               ))}
             </>
           )}
@@ -356,18 +354,17 @@ export default function StudentDashboardScreen({ navigation }: any) {
           { icon: '📅', title: 'History', desc: 'Past meals', route: 'HistoryTab', color: Colors.success },
           { icon: '🧾', title: 'My Bills', desc: 'Invoices', route: 'BillsTab', color: Colors.warning },
         ].map((a) => (
-          <TouchableOpacity
+          <Card
             key={a.route}
             style={styles.actionCard}
             onPress={() => navigation.navigate(a.route)}
-            activeOpacity={0.8}
           >
             <View style={[styles.actionIconBg, { backgroundColor: a.color + '22' }]}>
               <Text style={styles.actionIcon}>{a.icon}</Text>
             </View>
             <Text style={styles.actionTitle}>{a.title}</Text>
             <Text style={styles.actionDesc}>{a.desc}</Text>
-          </TouchableOpacity>
+          </Card>
         ))}
       </View>
     </ScrollView>
@@ -445,13 +442,8 @@ const styles = StyleSheet.create({
 
   // Leave Toggle
   leaveCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.xl,
-    padding: Spacing.lg,
-    marginBottom: Spacing.xl,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    ...Shadows.soft,
+    padding: 0,
+    borderWidth: 0,
   },
   leaveCardSubtitle: { fontSize: FontSize.sm, color: Colors.textMuted, marginBottom: Spacing.md, lineHeight: 20 },
   leaveRow: {
@@ -468,13 +460,8 @@ const styles = StyleSheet.create({
 
   // Today's Menu
   menuCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
     padding: Spacing.md,
     marginBottom: Spacing.sm,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    ...Shadows.soft,
   },
   menuMealType: { fontSize: FontSize.md, fontWeight: FontWeight.bold, marginBottom: 4 },
   menuItems: { fontSize: FontSize.md, color: Colors.textSecondary, lineHeight: 20 },
@@ -483,13 +470,8 @@ const styles = StyleSheet.create({
   actionsGrid: { flexDirection: 'row', justifyContent: 'space-between', gap: Spacing.sm },
   actionCard: {
     flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
     padding: Spacing.md,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
-    ...Shadows.soft,
   },
   actionIconBg: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.sm },
   actionIcon: { fontSize: 22 },

@@ -9,12 +9,15 @@ import {
   Alert,
   RefreshControl,
   Linking,
+  Modal,
 } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { Colors, FontSize, FontWeight, Radius, Spacing, Shadows } from '../../theme/tokens';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
 
 interface StudentBillingRow {
   student_id: string;
@@ -35,6 +38,14 @@ export default function BillingScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   const [generatingAll, setGeneratingAll] = useState(false);
+
+  // Payment Modal State
+  const [paymentModalVisible, setPaymentModalVisible] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = useState<StudentBillingRow | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'bank_transfer' | 'other'>('cash');
+  const [paymentNotes, setPaymentNotes] = useState('');
+  const [submittingPayment, setSubmittingPayment] = useState(false);
 
   // Current billing period: 1st of this month to today
   const periodStart = new Date();
@@ -137,6 +148,60 @@ export default function BillingScreen() {
     }
   };
 
+  const openPaymentModal = (row: StudentBillingRow) => {
+    setSelectedInvoice(row);
+    setPaymentAmount(row.total_due.toString());
+    setPaymentMethod('cash');
+    setPaymentNotes('');
+    setPaymentModalVisible(true);
+  };
+
+  const submitPayment = async () => {
+    if (!selectedInvoice || !selectedInvoice.existing_invoice_id || !tenantId) return;
+    
+    const amount = parseFloat(paymentAmount);
+    if (isNaN(amount) || amount <= 0) {
+      Alert.alert('Error', 'Please enter a valid amount.');
+      return;
+    }
+
+    setSubmittingPayment(true);
+    try {
+      const { error } = await supabase.from('payments').insert({
+        invoice_id: selectedInvoice.existing_invoice_id,
+        student_id: selectedInvoice.student_id,
+        tenant_id: tenantId,
+        amount: amount,
+        method: paymentMethod,
+        notes: paymentNotes,
+        logged_by: (await supabase.auth.getUser()).data.user?.id,
+      });
+
+      if (error) throw error;
+      
+      Alert.alert('Success', 'Payment recorded successfully!');
+      setPaymentModalVisible(false);
+      await fetchBilling();
+
+      // Ask if they want to send a receipt
+      Alert.alert(
+        'Send Receipt?',
+        'Would you like to send a payment receipt via WhatsApp?',
+        [
+          { text: 'No', style: 'cancel' },
+          { 
+            text: 'Yes, Send Receipt', 
+            onPress: () => shareReceiptViaWhatsApp(selectedInvoice, amount)
+          }
+        ]
+      );
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setSubmittingPayment(false);
+    }
+  };
+
   const generateAllInvoices = async () => {
     Alert.alert(
       'Generate All Invoices',
@@ -168,6 +233,19 @@ export default function BillingScreen() {
       `Rate/Day: ₹${row.rate_per_day.toFixed(0)}\n` +
       `*Total Due: ₹${row.total_due.toFixed(0)}*\n\n` +
       `Please make your payment at the earliest. Thank you! 🙏`;
+    const url = `whatsapp://send?text=${encodeURIComponent(message)}`;
+    Linking.openURL(url).catch(() => {
+      Alert.alert('WhatsApp not found', 'Please install WhatsApp to use this feature.');
+    });
+  };
+
+  const shareReceiptViaWhatsApp = (row: StudentBillingRow, amountPaid: number) => {
+    const message =
+      `*Payment Receipt ✅*\n` +
+      `Student: ${row.student_name}\n` +
+      `Amount Received: ₹${amountPaid.toFixed(0)}\n` +
+      `Method: ${paymentMethod.toUpperCase()}\n` +
+      `Thank you for your payment! 🙏`;
     const url = `whatsapp://send?text=${encodeURIComponent(message)}`;
     Linking.openURL(url).catch(() => {
       Alert.alert('WhatsApp not found', 'Please install WhatsApp to use this feature.');
@@ -269,11 +347,19 @@ export default function BillingScreen() {
               Invoice {item.invoice_status?.toUpperCase()}
             </Text>
           </View>
+          {item.invoice_status !== 'paid' && (
+            <TouchableOpacity
+              style={styles.collectBtn}
+              onPress={() => openPaymentModal(item)}
+            >
+              <Text style={styles.collectBtnText}>💰 Collect</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.whatsappBtn}
             onPress={() => shareViaWhatsApp(item)}
           >
-            <Text style={styles.whatsappBtnText}>📲 WhatsApp</Text>
+            <Text style={styles.whatsappBtnText}>📲</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -372,6 +458,60 @@ export default function BillingScreen() {
           }
         />
       )}
+
+      {/* Payment Collection Modal */}
+      <Modal visible={paymentModalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Collect Payment</Text>
+            <Text style={styles.modalSubtitle}>Student: {selectedInvoice?.student_name}</Text>
+            
+            <Input
+              label="Amount Received (₹)"
+              value={paymentAmount}
+              onChangeText={setPaymentAmount}
+              keyboardType="numeric"
+            />
+
+            <Text style={styles.label}>Payment Method</Text>
+            <View style={styles.methodRow}>
+              {['cash', 'upi', 'bank_transfer'].map((method) => (
+                <TouchableOpacity
+                  key={method}
+                  style={[styles.methodBtn, paymentMethod === method && styles.methodBtnActive]}
+                  onPress={() => setPaymentMethod(method as any)}
+                >
+                  <Text style={[styles.methodText, paymentMethod === method && styles.methodTextActive]}>
+                    {method.toUpperCase().replace('_', ' ')}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Input
+              label="Notes (Optional)"
+              value={paymentNotes}
+              onChangeText={setPaymentNotes}
+              placeholder="e.g. Cleared pending dues"
+            />
+            
+            <View style={styles.modalActions}>
+              <Button 
+                title="Cancel" 
+                variant="outline" 
+                style={{ flex: 1, marginRight: Spacing.sm }} 
+                onPress={() => setPaymentModalVisible(false)} 
+              />
+              <Button 
+                title="Save Payment" 
+                style={{ flex: 1, marginLeft: Spacing.sm }} 
+                onPress={submitPayment} 
+                isLoading={submittingPayment} 
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -457,7 +597,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   whatsappBtnText: { color: '#ffffff', fontSize: FontSize.sm, fontWeight: FontWeight.bold },
+  collectBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  collectBtnText: { color: Colors.text, fontSize: FontSize.sm, fontWeight: FontWeight.bold },
   empty: { alignItems: 'center', paddingTop: Spacing.xxl },
   emptyIcon: { fontSize: 48, marginBottom: Spacing.md },
   emptyText: { fontSize: FontSize.lg, color: Colors.textMuted },
+
+  // Modal Styles
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: Spacing.xl },
+  modalContent: { backgroundColor: Colors.surface, borderRadius: Radius.xl, padding: Spacing.xl, ...Shadows.large },
+  modalTitle: { color: Colors.text, fontSize: FontSize.xl, fontWeight: FontWeight.bold, marginBottom: Spacing.xs },
+  modalSubtitle: { color: Colors.textSecondary, fontSize: FontSize.md, marginBottom: Spacing.lg },
+  label: { color: Colors.text, fontSize: FontSize.sm, fontWeight: FontWeight.semibold, marginBottom: Spacing.sm },
+  methodRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.lg },
+  methodBtn: { flex: 1, paddingVertical: Spacing.sm, borderRadius: Radius.sm, borderWidth: 1, borderColor: Colors.border, alignItems: 'center' },
+  methodBtnActive: { backgroundColor: Colors.primary + '33', borderColor: Colors.primary },
+  methodText: { color: Colors.text, fontSize: FontSize.xs, fontWeight: FontWeight.bold },
+  methodTextActive: { color: Colors.primary },
+  modalActions: { flexDirection: 'row', marginTop: Spacing.md },
 });

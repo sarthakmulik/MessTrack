@@ -39,7 +39,19 @@ serve(async (req) => {
       geo_lat = null,
       geo_lng = null,
       device_id = null,
+      is_mocked = false,
     } = body;
+
+    // ── CHECK 0: Anti-Fraud Fake GPS ──
+    if (is_mocked) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          message: 'Fake GPS detected. You must be physically present at the mess to scan.',
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
 
     // Get the auth user from the JWT
     const authHeader = req.headers.get('Authorization');
@@ -172,16 +184,15 @@ serve(async (req) => {
 
     // ── CHECK 6: Active subscription for this meal type ──
     const today = new Date().toISOString().split('T')[0];
-    const { data: subscription, error: subError } = await supabaseAdmin
+    const { data: subscriptions, error: subError } = await supabaseAdmin
       .from('subscriptions')
       .select('*, plan:subscription_plans(*)')
       .eq('student_id', student.id)
       .eq('status', 'active')
       .lte('start_date', today)
-      .gte('end_date', today)
-      .single();
+      .gte('end_date', today);
 
-    if (subError || !subscription) {
+    if (subError || !subscriptions || subscriptions.length === 0) {
       return new Response(
         JSON.stringify({
           success: false,
@@ -191,12 +202,17 @@ serve(async (req) => {
       );
     }
 
-    const planMealTypes: string[] = subscription.plan?.meal_types ?? [];
-    if (!planMealTypes.includes(session.meal_type)) {
+    // Check if ANY active subscription covers this meal type
+    const hasMealAccess = subscriptions.some((sub: any) => {
+      const planMealTypes: string[] = sub.plan?.meal_types ?? [];
+      return planMealTypes.includes(session.meal_type);
+    });
+
+    if (!hasMealAccess) {
       return new Response(
         JSON.stringify({
           success: false,
-          message: `Your plan does not include ${session.meal_type}. Contact your mess admin.`,
+          message: `Your active plans do not include ${session.meal_type}. Contact your mess admin.`,
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );

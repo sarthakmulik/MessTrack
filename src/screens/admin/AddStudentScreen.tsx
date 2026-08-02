@@ -3,12 +3,15 @@ import {
   View,
   Text,
   ScrollView,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
   ActivityIndicator,
   Alert,
+  TouchableOpacity,
+  StyleSheet,
 } from 'react-native';
+import { Input } from '../../components/ui/Input';
+import { Button } from '../../components/ui/Button';
+import { Card } from '../../components/ui/Card';
+import { LoadingState } from '../../components/ui/LoadingState';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '../../theme/tokens';
@@ -109,12 +112,10 @@ export default function AddStudentScreen({ navigation, route }: { navigation: an
         {/* Name */}
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Full Name <Text style={styles.required}>*</Text></Text>
-          <TextInput
-            style={styles.input}
+          <Input
             value={name}
             onChangeText={setName}
             placeholder="e.g. Rahul Sharma"
-            placeholderTextColor={Colors.textMuted}
             autoCapitalize="words"
           />
         </View>
@@ -122,12 +123,10 @@ export default function AddStudentScreen({ navigation, route }: { navigation: an
         {/* Email */}
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Email <Text style={styles.required}>*</Text></Text>
-          <TextInput
-            style={styles.input}
+          <Input
             value={email}
             onChangeText={setEmail}
             placeholder="e.g. rahul@example.com"
-            placeholderTextColor={Colors.textMuted}
             keyboardType="email-address"
             autoCapitalize="none"
           />
@@ -136,12 +135,10 @@ export default function AddStudentScreen({ navigation, route }: { navigation: an
         {/* Phone */}
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Phone</Text>
-          <TextInput
-            style={styles.input}
+          <Input
             value={phone}
             onChangeText={setPhone}
             placeholder="e.g. 9876543210"
-            placeholderTextColor={Colors.textMuted}
             keyboardType="phone-pad"
           />
         </View>
@@ -168,14 +165,14 @@ export default function AddStudentScreen({ navigation, route }: { navigation: an
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Subscription Plan</Text>
           {plansLoading ? (
-            <ActivityIndicator color={Colors.primary} style={{ marginTop: Spacing.sm }} />
+            <LoadingState fullScreen={false} />
           ) : plans.length === 0 ? (
             <View style={styles.noPlansBox}>
               <Text style={styles.noPlansText}>No active plans found. Create a plan first.</Text>
             </View>
           ) : (
             plans.map((plan) => (
-              <TouchableOpacity
+              <Card
                 key={plan.id}
                 style={[styles.planCard, selectedPlanId === plan.id && styles.planCardActive]}
                 onPress={() => setSelectedPlanId(plan.id)}
@@ -192,28 +189,24 @@ export default function AddStudentScreen({ navigation, route }: { navigation: an
                     <Text style={styles.planCheck}>✓</Text>
                   )}
                 </View>
-              </TouchableOpacity>
+              </Card>
             ))
           )}
         </View>
 
         {/* Submit */}
-        <TouchableOpacity
-          style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
+        <Button
+          title="Add Student"
+          isLoading={loading}
           onPress={handleSubmit}
-          disabled={loading}
-          activeOpacity={0.85}
-        >
-          {loading ? (
-            <ActivityIndicator color={Colors.text} />
-          ) : (
-            <Text style={styles.submitText}>Add Student</Text>
-          )}
-        </TouchableOpacity>
+          style={{ marginTop: Spacing.sm, marginBottom: Spacing.sm }}
+        />
 
-        <TouchableOpacity style={styles.cancelBtn} onPress={() => navigation.goBack()}>
-          <Text style={styles.cancelText}>Cancel</Text>
-        </TouchableOpacity>
+        <Button
+          title="Cancel"
+          variant="ghost"
+          onPress={() => navigation.goBack()}
+        />
       </ScrollView>
     </View>
   );
@@ -225,11 +218,6 @@ const styles = StyleSheet.create({
   fieldGroup: { marginBottom: Spacing.lg },
   label: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.textSecondary, marginBottom: Spacing.sm },
   required: { color: Colors.error },
-  input: {
-    backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1,
-    borderColor: Colors.border, color: Colors.text, fontSize: FontSize.md,
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.md,
-  },
   pillRow: { flexDirection: 'row', gap: Spacing.sm },
   pill: {
     flex: 1, paddingVertical: Spacing.sm, borderRadius: Radius.md,
@@ -246,8 +234,7 @@ const styles = StyleSheet.create({
   noPlansText: { color: Colors.textMuted, fontSize: FontSize.sm },
   planCard: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1,
-    borderColor: Colors.border, padding: Spacing.md, marginBottom: Spacing.sm,
+    marginBottom: Spacing.sm,
   },
   planCardActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '11' },
   planLeft: { flex: 1 },
@@ -256,13 +243,4 @@ const styles = StyleSheet.create({
   planRight: { alignItems: 'flex-end' },
   planPrice: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.primary },
   planCheck: { color: Colors.success, fontWeight: FontWeight.bold, fontSize: FontSize.lg, marginTop: 2 },
-  submitBtn: {
-    backgroundColor: Colors.primary, borderRadius: Radius.md,
-    paddingVertical: Spacing.md + 2, alignItems: 'center',
-    marginTop: Spacing.sm, marginBottom: Spacing.sm,
-  },
-  submitBtnDisabled: { opacity: 0.6 },
-  submitText: { color: Colors.text, fontSize: FontSize.md, fontWeight: FontWeight.bold },
-  cancelBtn: { alignItems: 'center', paddingVertical: Spacing.md },
-  cancelText: { color: Colors.textMuted, fontSize: FontSize.md },
 });

@@ -47,9 +47,6 @@ export default function ScanScreen({ navigation }: any) {
     // Prevent rapid double-scans
     if (scanned || processing) return;
 
-    // DEBUG: Alert immediately so user knows it fired
-    Alert.alert('Scanned!', `Data: ${rawData}`);
-
     setScanned(true);
     setProcessing(true);
     Vibration.vibrate(100);
@@ -61,13 +58,29 @@ export default function ScanScreen({ navigation }: any) {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
-          // Try to get last known position first (fast), fallback to current (with timeout)
-          let location = await Location.getLastKnownPositionAsync();
+          // Wrap location fetch in a 5-second timeout so it doesn't hang forever
+          const locationPromise = Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
+          
+          let location = await Promise.race([locationPromise, timeoutPromise]) as Location.LocationObject | null;
+          
+          // Fallback to last known if current position timed out
           if (!location) {
-            location = await Location.getCurrentPositionAsync({
-              accuracy: Location.Accuracy.Balanced,
-            });
+            location = await Location.getLastKnownPositionAsync();
           }
+
+          // Anti-Fraud: Check if the user is using a fake GPS app
+          if (location && (location as any).mocked) {
+            const msg = '🚫 Fake GPS detected. You must be physically present at the mess to scan.';
+            setResult({ success: false, message: msg });
+            Alert.alert('Scan Rejected', msg);
+            setProcessing(false);
+            setScanned(false);
+            return;
+          }
+
           geo_lat = location?.coords?.latitude || 0;
           geo_lng = location?.coords?.longitude || 0;
         }
@@ -84,44 +97,39 @@ export default function ScanScreen({ navigation }: any) {
 
       const { data: responseData, error } = await supabase.functions.invoke('validate-scan', {
         body: {
-          token: rawData,
+          token: rawData ? rawData.trim() : '',
           scanned_at: new Date().toISOString(),
           geo_lat,
           geo_lng,
           device_id,
+          is_mocked: (location as any)?.mocked || false,
         },
       });
 
       if (error) {
         // Network error
         if (error.message?.includes('network') || error.message?.includes('fetch')) {
-          setResult({
-            success: false,
-            message: '📶 No internet connection. Please connect to the internet to scan.',
-          });
+          const msg = '📶 No internet connection. Please connect to the internet to scan.';
+          setResult({ success: false, message: msg });
+          Alert.alert('Error', msg);
         } else {
-          setResult({
-            success: false,
-            message: error.message || 'Scan failed. Please try again.',
-          });
+          const msg = error.message || 'Scan failed. Please try again.';
+          setResult({ success: false, message: msg });
+          Alert.alert('Error', msg);
         }
       } else if (responseData?.success) {
-        setResult({
-          success: true,
-          message: `✅ Attendance marked for ${responseData.meal_type || 'this meal'}!`,
-          meal_type: responseData.meal_type,
-        });
+        const msg = `✅ Attendance marked for ${responseData.meal_type || 'this meal'}!`;
+        setResult({ success: true, message: msg, meal_type: responseData.meal_type });
+        Alert.alert('Success!', msg);
       } else {
-        setResult({
-          success: false,
-          message: responseData?.message || 'Scan rejected. Please contact your mess admin.',
-        });
+        const msg = responseData?.message || 'Scan rejected. Please contact your mess admin.';
+        setResult({ success: false, message: msg });
+        Alert.alert('Scan Rejected', msg);
       }
     } catch (err: any) {
-      setResult({
-        success: false,
-        message: '📶 No internet connection. Please connect to the internet to scan.',
-      });
+      const msg = '📶 No internet connection or server error.';
+      setResult({ success: false, message: msg });
+      Alert.alert('Error', msg);
     } finally {
       setProcessing(false);
       // Reset scanner after 3 seconds

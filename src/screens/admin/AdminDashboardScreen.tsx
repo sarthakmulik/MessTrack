@@ -14,6 +14,7 @@ import { supabase } from '../../lib/supabase';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadows } from '../../theme/tokens';
 import { LinearGradient } from 'expo-linear-gradient';
 import Badge from '../../components/Badge';
+import { Card } from '../../components/ui/Card';
 import { DashboardSkeleton } from '../../components/SkeletonLoader';
 
 interface DashboardStats {
@@ -268,7 +269,7 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
         </LinearGradient>
 
         {/* ✨ NEW: Cook For Today Widget */}
-        <View style={styles.cookForCard}>
+        <Card style={styles.cookForCard}>
           <View style={styles.cookForLeft}>
             <Text style={styles.cookForEmoji}>🍳</Text>
             <View>
@@ -282,7 +283,7 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
             <Text style={styles.cookForNumber}>{stats.cookFor}</Text>
             <Text style={styles.cookForSub2}>students</Text>
           </View>
-        </View>
+        </Card>
 
         {/* ✨ NEW: Alerts Row */}
         {(stats.unpaidInvoicesCount > 0 || stats.expiringThisWeek > 0) && (
@@ -290,7 +291,7 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
             <Text style={styles.sectionTitle}>⚠️ Alerts</Text>
             <View style={styles.alertsRow}>
               {stats.unpaidInvoicesCount > 0 && (
-                <TouchableOpacity
+                <Card
                   style={[styles.alertCard, { borderLeftColor: Colors.error }]}
                   onPress={() => navigation.navigate('Billing')}
                 >
@@ -298,10 +299,10 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
                   <Text style={styles.alertValue}>{stats.unpaidInvoicesCount}</Text>
                   <Text style={styles.alertLabel}>Unpaid Bills</Text>
                   <Text style={styles.alertSub}>₹{stats.unpaidInvoicesAmount.toLocaleString('en-IN')}</Text>
-                </TouchableOpacity>
+                </Card>
               )}
               {stats.expiringThisWeek > 0 && (
-                <TouchableOpacity
+                <Card
                   style={[styles.alertCard, { borderLeftColor: Colors.warning }]}
                   onPress={() => navigation.navigate('Students')}
                 >
@@ -309,7 +310,7 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
                   <Text style={styles.alertValue}>{stats.expiringThisWeek}</Text>
                   <Text style={styles.alertLabel}>Expiring Soon</Text>
                   <Text style={styles.alertSub}>within 7 days</Text>
-                </TouchableOpacity>
+                </Card>
               )}
             </View>
           </>
@@ -324,7 +325,7 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
         </View>
 
         {stats.todayMenus.length === 0 ? (
-          <TouchableOpacity
+          <Card
             style={styles.menuEmptyCard}
             onPress={() => navigation.navigate('Menu')}
           >
@@ -333,10 +334,10 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
               No menu posted for today.{'\n'}
               <Text style={{ color: Colors.primary }}>Tap to post menu →</Text>
             </Text>
-          </TouchableOpacity>
+          </Card>
         ) : (
           stats.todayMenus.map((menu) => (
-            <View key={menu.meal_type} style={styles.menuCard}>
+            <Card key={menu.meal_type} style={styles.menuCard}>
               <View style={styles.menuCardHeader}>
                 <Text style={styles.menuMealEmoji}>{MEAL_EMOJI[menu.meal_type] ?? '🍽️'}</Text>
                 <Text style={[styles.menuMealType, { color: MEAL_COLORS[menu.meal_type] ?? Colors.text }]}>
@@ -344,7 +345,7 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
                 </Text>
               </View>
               <Text style={styles.menuItems}>{menu.items.join(' · ')}</Text>
-            </View>
+            </Card>
           ))
         )}
 
@@ -352,17 +353,16 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.grid}>
           {QUICK_ACTIONS.map((action, index) => (
-            <TouchableOpacity
+            <Card
               key={index}
               style={styles.actionCard}
-              activeOpacity={0.7}
               onPress={() => navigation.navigate(action.route)}
             >
               <View style={[styles.iconWrapper, { backgroundColor: action.color + '15' }]}>
                 <Text style={styles.actionIcon}>{action.icon}</Text>
               </View>
               <Text style={styles.actionLabel}>{action.label}</Text>
-            </TouchableOpacity>
+            </Card>
           ))}
         </View>
       </ScrollView>
@@ -425,16 +425,9 @@ const styles = StyleSheet.create({
 
   // Cook For Card
   cookForCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.xl,
-    padding: Spacing.lg,
-    marginBottom: Spacing.xl,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
-    ...Shadows.soft,
   },
   cookForLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   cookForEmoji: { fontSize: 36 },
@@ -447,13 +440,7 @@ const styles = StyleSheet.create({
   alertsRow: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.xl },
   alertCard: {
     flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
     borderLeftWidth: 4,
-    ...Shadows.soft,
   },
   alertIcon: { fontSize: 22, marginBottom: 4 },
   alertValue: { fontSize: 26, fontWeight: FontWeight.heavy, color: Colors.text },
@@ -462,9 +449,6 @@ const styles = StyleSheet.create({
 
   // Menu
   menuEmptyCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
-    padding: Spacing.lg,
     alignItems: 'center',
     marginBottom: Spacing.xl,
     borderWidth: 1.5,
@@ -474,13 +458,7 @@ const styles = StyleSheet.create({
   menuEmptyIcon: { fontSize: 32, marginBottom: Spacing.sm },
   menuEmptyText: { color: Colors.textMuted, textAlign: 'center', lineHeight: 22, fontSize: FontSize.md },
   menuCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
-    padding: Spacing.md,
     marginBottom: Spacing.sm,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    ...Shadows.soft,
   },
   menuCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
   menuMealEmoji: { fontSize: 18 },
@@ -491,14 +469,8 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   actionCard: {
     width: '48%',
-    backgroundColor: Colors.surface,
-    padding: Spacing.lg,
-    borderRadius: Radius.lg,
     alignItems: 'center',
     marginBottom: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    ...Shadows.soft,
   },
   iconWrapper: {
     width: 56, height: 56, borderRadius: Radius.full,
