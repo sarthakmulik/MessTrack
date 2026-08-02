@@ -1,12 +1,15 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-// ─── QR Token Rotation Edge Function ───────────────────────
-// Called by a Supabase cron job every 15-20 seconds
-// during active meal sessions.
-// Inserts a new token for each active session; the DB trigger
-// `on_new_qr_token` automatically expires the old one.
-// Admin app listens via Realtime and re-renders instantly.
+// ─── QR Token Rotation Edge Function ────────────────────────────────────────
+// Called directly by the Admin QRDisplayScreen when a session is started,
+// or periodically (every 20s) for auto-rotation.
+//
+// Accepts an optional body: { session_id?: string }
+//   - If session_id is provided → rotate THAT specific session only.
+//   - If no session_id → rotate ALL currently active sessions (cron mode).
+//
+// Always returns: { success: true, sessions: [{ session_id, meal_type, token }] }
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,26 +27,56 @@ serve(async (req) => {
   );
 
   try {
-    const now = new Date().toISOString();
-    const todayDate = new Date().toISOString().split('T')[0];
+    // Parse optional body
+    let requestedSessionId: string | null = null;
+    try {
+      const body = await req.json();
+      requestedSessionId = body?.session_id ?? null;
+    } catch {
+      // No body or invalid JSON — that's fine, we'll rotate all active sessions
+    }
 
-    // Find all currently active sessions
-    const { data: activeSessions, error: sessErr } = await supabaseAdmin
-      .from('meal_sessions')
-      .select('id, tenant_id, meal_type')
-      .eq('status', 'active')
-      .eq('session_date', todayDate)
-      .lte('start_time', now)
-      .gte('end_time', now);
+    let activeSessions: { id: string; tenant_id: string; meal_type: string }[] = [];
 
-    if (sessErr) throw sessErr;
+    if (requestedSessionId) {
+      // ── TARGETED MODE: rotate only the requested session ──
+      // We just verify it's active (no fragile time-window check)
+      const { data, error } = await supabaseAdmin
+        .from('meal_sessions')
+        .select('id, tenant_id, meal_type')
+        .eq('id', requestedSessionId)
+        .eq('status', 'active')
+        .maybeSingle();
 
-    const results = [];
+      if (error) throw error;
+      if (data) activeSessions = [data];
+    } else {
+      // ── CRON MODE: rotate all currently active sessions ──
+      const todayDate = new Date().toISOString().split('T')[0];
+      const { data, error } = await supabaseAdmin
+        .from('meal_sessions')
+        .select('id, tenant_id, meal_type')
+        .eq('status', 'active')
+        .eq('session_date', todayDate);
 
-    for (const session of (activeSessions || [])) {
+      if (error) throw error;
+      activeSessions = data ?? [];
+    }
+
+    const results: { session_id: string; meal_type: string; token: string }[] = [];
+
+    for (const session of activeSessions) {
       const token = `MT-${session.id.slice(0, 8)}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
       const expiresAt = new Date(Date.now() + 20 * 1000).toISOString(); // 20s
 
+      // Expire all old tokens for this session first
+      await supabaseAdmin
+        .from('qr_tokens')
+        .update({ expires_at: new Date(Date.now() - 1000).toISOString() })
+        .eq('meal_session_id', session.id)
+        .gt('expires_at', new Date().toISOString());
+
+      // Insert fresh token
       const { error: insertErr } = await supabaseAdmin
         .from('qr_tokens')
         .insert({
@@ -64,7 +97,7 @@ serve(async (req) => {
         success: true,
         rotated: results.length,
         sessions: results,
-        timestamp: now,
+        timestamp: new Date().toISOString(),
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );

@@ -77,60 +77,64 @@ export default function QRDisplayScreen({ route, navigation }: any) {
   }, [sessionId]);
 
   // ── Generate & insert a new QR token via Edge Function ──
-  const rotateToken = useCallback(async () => {
-    if (!tenantId) return;
-    
-    // Invoke the edge function which uses the service role key to bypass RLS
+  // Pass sessionId so the Edge Function rotates ONLY this session (no time-window bug)
+  const rotateToken = useCallback(async (): Promise<string | null> => {
+    if (!tenantId) return null;
+
     const { data, error } = await supabase.functions.invoke('rotate-qr-token', {
-      method: 'POST'
+      method: 'POST',
+      body: { session_id: sessionId },
     });
 
     if (error) {
-      Alert.alert('QR Token Error', error.message);
       console.warn('Token rotation error:', error.message);
-    } else {
-      fetchScanCount();
-      
-      // Fallback: Use the token returned by the Edge Function directly 
-      // in case Realtime subscriptions are delayed or not enabled.
-      if (data?.sessions) {
-        const mySessionToken = data.sessions.find((s: any) => s.session_id === sessionId);
-        if (mySessionToken && mySessionToken.token) {
-          setCurrentToken(mySessionToken.token);
-          setCountdown(ROTATION_SECONDS);
-        }
-      }
+      return null;
     }
+
+    fetchScanCount();
+
+    // The edge function returns the new token directly — use it immediately
+    if (data?.sessions?.length > 0) {
+      const newToken: string = data.sessions[0].token;
+      setCurrentToken(newToken);
+      setCountdown(ROTATION_SECONDS);
+      return newToken;
+    }
+    return null;
   }, [tenantId, fetchScanCount, sessionId]);
 
   // ── Fetch latest active token on mount ──
   const fetchLatestToken = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('qr_tokens')
-      .select('*')
-      .eq('meal_session_id', sessionId)
-      .gt('expires_at', new Date().toISOString())
-      .order('issued_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    try {
+      const { data, error } = await supabase
+        .from('qr_tokens')
+        .select('*')
+        .eq('meal_session_id', sessionId)
+        .gt('expires_at', new Date().toISOString())
+        .order('issued_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-    if (error) {
-      console.warn('Error fetching latest token:', error);
-    }
-
-    if (data) {
-      setCurrentToken((data as QRToken).token);
-      const remaining = Math.max(
-        0,
-        Math.ceil((new Date((data as QRToken).expires_at).getTime() - Date.now()) / 1000),
-      );
-      setCountdown(remaining);
-    } else {
-      // No active token — mint the first one
+      if (!error && data) {
+        // There's already a valid token in DB — use it
+        setCurrentToken((data as QRToken).token);
+        const remaining = Math.max(
+          0,
+          Math.ceil((new Date((data as QRToken).expires_at).getTime() - Date.now()) / 1000),
+        );
+        setCountdown(remaining);
+      } else {
+        // No active token yet — mint the first one via edge function
+        await rotateToken();
+      }
+    } catch (err) {
+      console.warn('Error during fetchLatestToken:', err);
+      // Even on error, try to mint a token
       await rotateToken();
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [sessionId, rotateToken]);
 
   // ── Subscribe to Realtime token updates ──
@@ -173,10 +177,14 @@ export default function QRDisplayScreen({ route, navigation }: any) {
     };
   }, []);
 
-  // ── Auto-rotate when countdown hits 0 ──
+  // ── Auto-rotate when countdown hits 0 (debounce: only when exactly 0) ──
+  const hasRotatedRef = useRef(false);
   useEffect(() => {
-    if (countdown === 0) {
-      rotateToken();
+    if (countdown === 0 && !hasRotatedRef.current) {
+      hasRotatedRef.current = true;
+      rotateToken().finally(() => {
+        hasRotatedRef.current = false;
+      });
     }
   }, [countdown, rotateToken]);
 
