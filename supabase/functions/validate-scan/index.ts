@@ -46,7 +46,7 @@ serve(async (req) => {
     if (!authHeader) {
       return new Response(
         JSON.stringify({ success: false, message: 'Not authenticated.' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
@@ -60,7 +60,7 @@ serve(async (req) => {
     if (authError || !user) {
       return new Response(
         JSON.stringify({ success: false, message: 'Authentication failed.' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
@@ -78,7 +78,7 @@ serve(async (req) => {
           success: false,
           message: 'QR code has expired. Wait for the next rotation and try again.',
         }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
@@ -93,7 +93,7 @@ serve(async (req) => {
             success: false,
             message: 'Location required to scan for this mess. Enable GPS and try again.',
           }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
       }
       
@@ -104,7 +104,7 @@ serve(async (req) => {
             success: false,
             message: `You are too far from the mess (${Math.round(distance)}m). You must be within 100m to scan.`,
           }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
       }
     }
@@ -120,7 +120,7 @@ serve(async (req) => {
           success: false,
           message: `Scanning is only allowed between ${sessionStart.toLocaleTimeString()} and ${sessionEnd.toLocaleTimeString()}.`,
         }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
@@ -131,7 +131,7 @@ serve(async (req) => {
           success: false,
           message: 'This meal session is not currently active.',
         }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
@@ -150,7 +150,7 @@ serve(async (req) => {
           success: false,
           message: 'Student record not found, inactive, or you are scanning a QR for a different mess.',
         }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
@@ -165,12 +165,10 @@ serve(async (req) => {
             success: false,
             message: 'This account is bound to another device. You cannot scan from multiple devices. Contact Admin to reset.',
           }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
       }
     }
-
-
 
     // ── CHECK 6: Active subscription for this meal type ──
     const today = new Date().toISOString().split('T')[0];
@@ -189,7 +187,7 @@ serve(async (req) => {
           success: false,
           message: 'You do not have an active subscription. Contact your mess admin.',
         }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
@@ -200,7 +198,7 @@ serve(async (req) => {
           success: false,
           message: `Your plan does not include ${session.meal_type}. Contact your mess admin.`,
         }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
@@ -219,7 +217,7 @@ serve(async (req) => {
           success: false,
           message: `Already marked present for ${session.meal_type}. No duplicate scans allowed.`,
         }),
-        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
@@ -246,7 +244,7 @@ serve(async (req) => {
             success: false,
             message: `Already marked present for ${session.meal_type}.`,
           }),
-          { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
       }
       throw insertError;
