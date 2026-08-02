@@ -41,15 +41,14 @@ export default function ScanScreen({ navigation }: any) {
     };
   }, []);
 
-  const handleBarcodeScanned = async ({ data: rawData }: { data: string }) => {
+  const handleBarcodeScanned = async (scanningResult: any) => {
+    const rawData = scanningResult.data;
+    
     // Prevent rapid double-scans
     if (scanned || processing) return;
 
-    // SECURITY: Reject if data looks like a file path (gallery import attempt)
-    // In CameraView, gallery import is not possible — this is an extra safeguard
-    if (!rawData || rawData.length < 10) {
-      return;
-    }
+    // DEBUG: Alert immediately so user knows it fired
+    Alert.alert('Scanned!', `Data: ${rawData}`);
 
     setScanned(true);
     setProcessing(true);
@@ -62,16 +61,15 @@ export default function ScanScreen({ navigation }: any) {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
-          const location = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          });
-          geo_lat = location.coords.latitude;
-          geo_lng = location.coords.longitude;
-        } else {
-          Alert.alert('Permission Denied', 'Location is required to verify you are at the mess.');
-          setProcessing(false);
-          setScanned(false);
-          return;
+          // Try to get last known position first (fast), fallback to current (with timeout)
+          let location = await Location.getLastKnownPositionAsync();
+          if (!location) {
+            location = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+            });
+          }
+          geo_lat = location?.coords?.latitude || 0;
+          geo_lng = location?.coords?.longitude || 0;
         }
       } catch (e) {
         console.log('Location error', e);
@@ -167,11 +165,11 @@ export default function ScanScreen({ navigation }: any) {
       {/* Camera — live only, no gallery */}
       <CameraView
         style={StyleSheet.absoluteFill}
-        facing={'back' as CameraType}
-        onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+        facing={'back'}
         barcodeScannerSettings={{
           barcodeTypes: ['qr'],
         }}
+        onBarcodeScanned={handleBarcodeScanned}
       />
 
       {/* Overlay UI */}
