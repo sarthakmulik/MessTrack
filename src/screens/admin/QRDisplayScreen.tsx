@@ -353,8 +353,8 @@ const styles = StyleSheet.create({
   mealBadgeIcon: { fontSize: 28 },
   mealBadgeText: { fontSize: FontSize.xxl, fontWeight: FontWeight.heavy, letterSpacing: 1 },
   qrWrapper: {
-    padding: Spacing.lg,
-    backgroundColor: Colors.text,
+    padding: Spacing.xl,
+    backgroundColor: '#FFFFFF',
     borderRadius: Radius.xl,
     elevation: 20,
     shadowColor: Colors.primary,
