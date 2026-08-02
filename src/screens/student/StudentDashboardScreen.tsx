@@ -352,9 +352,9 @@ export default function StudentDashboardScreen({ navigation }: any) {
       <Text style={styles.sectionTitle}>Quick Actions</Text>
       <View style={styles.actionsGrid}>
         {[
-          { icon: '📷', title: 'Scan QR', desc: 'Mark attendance', route: 'Scan', color: Colors.primary },
-          { icon: '📅', title: 'History', desc: 'Past meals', route: 'AttendanceHistory', color: Colors.success },
-          { icon: '🧾', title: 'My Bills', desc: 'Invoices', route: 'StudentInvoices', color: Colors.warning },
+          { icon: '📷', title: 'Scan QR', desc: 'Mark attendance', route: 'ScanTab', color: Colors.primary },
+          { icon: '📅', title: 'History', desc: 'Past meals', route: 'HistoryTab', color: Colors.success },
+          { icon: '🧾', title: 'My Bills', desc: 'Invoices', route: 'BillsTab', color: Colors.warning },
         ].map((a) => (
           <TouchableOpacity
             key={a.route}

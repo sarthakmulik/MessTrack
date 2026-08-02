@@ -34,7 +34,7 @@ const QUICK_ACTIONS = [
   { label: 'Students', icon: '👨‍🎓', route: 'Students', color: Colors.primary },
   { label: 'Plans', icon: '📋', route: 'Plans', color: Colors.accent },
   { label: 'Sessions', icon: '🍽️', route: 'Sessions', color: Colors.lunch },
-  { label: 'QR Display', icon: '🔲', route: 'QRDisplay', color: Colors.dinner },
+  { label: 'QR Display', icon: '🔲', route: 'Sessions', color: Colors.dinner },
   { label: 'Attendance', icon: '✅', route: 'AdminAttendance', color: Colors.warning },
   { label: 'Billing', icon: '💰', route: 'Billing', color: Colors.breakfast },
   { label: 'Menu', icon: '🍛', route: 'Menu', color: '#8B5CF6' },
