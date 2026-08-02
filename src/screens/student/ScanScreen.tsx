@@ -55,6 +55,7 @@ export default function ScanScreen({ navigation }: any) {
       // Get Location (Geofencing)
       let geo_lat = null;
       let geo_lng = null;
+      let location: Location.LocationObject | null = null; // hoisted to outer scope
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
@@ -64,7 +65,7 @@ export default function ScanScreen({ navigation }: any) {
           });
           const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
           
-          let location = await Promise.race([locationPromise, timeoutPromise]) as Location.LocationObject | null;
+          location = await Promise.race([locationPromise, timeoutPromise]) as Location.LocationObject | null;
           
           // Fallback to last known if current position timed out
           if (!location) {
