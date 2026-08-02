@@ -81,7 +81,7 @@ export default function QRDisplayScreen({ route, navigation }: any) {
     if (!tenantId) return;
     
     // Invoke the edge function which uses the service role key to bypass RLS
-    const { error } = await supabase.functions.invoke('rotate-qr-token', {
+    const { data, error } = await supabase.functions.invoke('rotate-qr-token', {
       method: 'POST'
     });
 
@@ -89,11 +89,19 @@ export default function QRDisplayScreen({ route, navigation }: any) {
       Alert.alert('QR Token Error', error.message);
       console.warn('Token rotation error:', error.message);
     } else {
-      // The new token will be picked up by the Realtime subscription below,
-      // but we can also manually refresh the scan count here.
       fetchScanCount();
+      
+      // Fallback: Use the token returned by the Edge Function directly 
+      // in case Realtime subscriptions are delayed or not enabled.
+      if (data?.sessions) {
+        const mySessionToken = data.sessions.find((s: any) => s.session_id === sessionId);
+        if (mySessionToken && mySessionToken.token) {
+          setCurrentToken(mySessionToken.token);
+          setCountdown(ROTATION_SECONDS);
+        }
+      }
     }
-  }, [tenantId, fetchScanCount]);
+  }, [tenantId, fetchScanCount, sessionId]);
 
   // ── Fetch latest active token on mount ──
   const fetchLatestToken = useCallback(async () => {
