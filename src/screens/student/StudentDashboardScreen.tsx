@@ -97,20 +97,32 @@ export default function StudentDashboardScreen({ navigation }: any) {
       const tenantIdMap: Record<string, string> = {};
 
       // Fetch attendance counts in parallel
-      const attendanceCounts = await Promise.all(
+      // Fetch all attendance records for this month
+      const attendanceRes = await Promise.all(
         studentRecords.map((r) =>
           supabase
             .from('attendance_records')
-            .select('id', { count: 'exact', head: true })
+            .select('id, subscription_id')
             .eq('student_id', r.id)
             .eq('status', 'present')
             .gte('scanned_at', startOfMonth)
-            .then((res) => ({ student_id: r.id, count: res.count ?? 0 })),
+            .then((res) => ({ student_id: r.id, data: res.data || [] })),
         ),
       );
 
-      const countMap: Record<string, number> = {};
-      attendanceCounts.forEach((c) => (countMap[c.student_id] = c.count));
+      // Group counts by subscription_id
+      const subCountMap: Record<string, number> = {};
+      let legacyCount = 0; // Records before we added subscription_id
+      
+      attendanceRes.forEach((c) => {
+        c.data.forEach((record: any) => {
+          if (record.subscription_id) {
+            subCountMap[record.subscription_id] = (subCountMap[record.subscription_id] || 0) + 1;
+          } else {
+            legacyCount++;
+          }
+        });
+      });
 
       const cardsList: MessCard[] = [];
       for (const r of studentRecords) {
@@ -130,12 +142,13 @@ export default function StudentDashboardScreen({ navigation }: any) {
             tenant_name: (r.tenants as any)?.name ?? 'Mess',
             plan_name: sub.plan?.name ?? 'Plan',
             days_remaining: daysRemaining,
-            attendance_this_month: countMap[r.id] ?? 0,
+            attendance_this_month: (subCountMap[sub.id] || 0) + (legacyCount > 0 ? legacyCount : 0),
             meal_types: sub.plan?.meal_types ?? [],
             meal_configs: (r.tenants as any)?.meal_configs ?? {},
             end_date: sub.end_date,
           });
         }
+        legacyCount = 0; // Only apply legacy records to the first active sub found
       }
 
       setCards(cardsList);

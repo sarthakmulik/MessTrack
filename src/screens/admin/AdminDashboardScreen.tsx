@@ -109,7 +109,7 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
           .eq('status', 'active'),
         supabase
           .from('meal_leaves')
-          .select('id', { count: 'exact', head: true })
+          .select('student_id')
           .eq('tenant_id', tenantId)
           .eq('leave_date', today),
         supabase
@@ -132,7 +132,9 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
       ]);
 
       const totalStudents = studentsRes.count ?? 0;
-      const onLeave = leavesRes.count ?? 0;
+      // Get unique students on leave today
+      const uniqueStudentsOnLeave = new Set((leavesRes.data ?? []).map(r => r.student_id)).size;
+      const onLeave = uniqueStudentsOnLeave;
       const unpaidAmount = (unpaidInvoicesRes.data ?? []).reduce(
         (sum, inv) => sum + (inv.total_amount ?? 0),
         0,

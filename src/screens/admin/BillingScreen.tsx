@@ -62,7 +62,7 @@ export default function BillingScreen() {
       // Get all students with active subscriptions
       const { data: students, error: sErr } = await supabase
         .from('students')
-        .select('id, name, email, subscriptions(*, plan:subscription_plans(name, price, days_included, duration_days))')
+        .select('id, name, email, subscriptions(*, plan:subscription_plans(name, price, days_included, duration_days, meal_types))')
         .eq('tenant_id', tenantId)
         .order('name');
 
@@ -71,22 +71,46 @@ export default function BillingScreen() {
       const result: StudentBillingRow[] = [];
 
       for (const s of (students || []) as any[]) {
-        const activeSub = (s.subscriptions || []).find(
-          (sub: any) => sub.status === 'active',
+        const activeSubs = (s.subscriptions || []).filter(
+          (sub: any) => sub.status === 'active'
         );
-        if (!activeSub) continue;
+        if (activeSubs.length === 0) continue;
 
-        const plan = activeSub.plan;
-        const ratePerDay = plan ? plan.price / plan.days_included : 0;
-
-        // Count attendance this month
-        const { count: daysPresent } = await supabase
+        // Fetch all attendance this month for this student
+        const { data: allAttendance } = await supabase
           .from('attendance_records')
-          .select('id', { count: 'exact', head: true })
+          .select('id, subscription_id')
           .eq('student_id', s.id)
           .eq('status', 'present')
           .gte('scanned_at', periodStart.toISOString())
           .lte('scanned_at', periodEnd.toISOString());
+
+        const attendanceList = allAttendance || [];
+        let totalMeals = 0;
+        let totalDue = 0;
+        let planNames: string[] = [];
+
+        for (const sub of activeSubs) {
+          const plan = sub.plan;
+          if (!plan) continue;
+          planNames.push(plan.name);
+
+          // Calculate charge per meal
+          const mealTypesCount = (plan.meal_types || []).length || 1;
+          const ratePerMeal = plan.price / (plan.days_included * mealTypesCount);
+
+          // Count attendance for this subscription (fallback to legacy nulls if only 1 active sub)
+          const mealsForSub = attendanceList.filter((a: any) => 
+            a.subscription_id === sub.id || (activeSubs.length === 1 && !a.subscription_id)
+          ).length;
+
+          totalMeals += mealsForSub;
+          totalDue += (mealsForSub * ratePerMeal);
+        }
+
+        if (planNames.length === 0) continue;
+
+        const avgRate = totalMeals > 0 ? totalDue / totalMeals : 0;
 
         // Check for existing invoice this period
         const { data: existingInvoice } = await supabase
@@ -101,10 +125,10 @@ export default function BillingScreen() {
           student_id: s.id,
           student_name: s.name,
           student_email: s.email,
-          plan_name: plan?.name ?? 'Unknown',
-          rate_per_day: ratePerDay,
-          days_present_this_month: daysPresent ?? 0,
-          total_due: (daysPresent ?? 0) * ratePerDay,
+          plan_name: planNames.join(' + '),
+          rate_per_day: avgRate,
+          days_present_this_month: totalMeals,
+          total_due: totalDue,
           existing_invoice_id: existingInvoice?.id ?? null,
           invoice_status: existingInvoice?.status ?? null,
         });

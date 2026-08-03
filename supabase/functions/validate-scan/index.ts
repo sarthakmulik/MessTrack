@@ -203,12 +203,12 @@ serve(async (req) => {
     }
 
     // Check if ANY active subscription covers this meal type
-    const hasMealAccess = subscriptions.some((sub: any) => {
+    const authorizingSub = subscriptions.find((sub: any) => {
       const planMealTypes: string[] = sub.plan?.meal_types ?? [];
       return planMealTypes.includes(session.meal_type);
     });
 
-    if (!hasMealAccess) {
+    if (!authorizingSub) {
       return new Response(
         JSON.stringify({
           success: false,
@@ -245,6 +245,7 @@ serve(async (req) => {
         meal_session_id: session.id,
         tenant_id: session.tenant_id,
         qr_token_id: qrToken.id,
+        subscription_id: authorizingSub.id,
         scanned_at: new Date().toISOString(),
         geo_lat,
         geo_lng,
