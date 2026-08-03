@@ -32,6 +32,7 @@ export default function ScanScreen({ navigation }: any) {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [diningOption, setDiningOption] = useState<'dine_in' | 'dabba'>('dine_in');
   const [result, setResult] = useState<ScanResult | null>(null);
   const cooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -104,6 +105,7 @@ export default function ScanScreen({ navigation }: any) {
           geo_lng,
           device_id,
           is_mocked: (location as any)?.mocked || false,
+          dining_option: diningOption,
         },
       });
 
@@ -225,6 +227,26 @@ export default function ScanScreen({ navigation }: any) {
           Point your camera at the QR code displayed at the mess counter
         </Text>
 
+        {/* Dine-In vs Dabba Mode Selector */}
+        <View style={styles.modeContainer}>
+          <TouchableOpacity
+            style={[styles.modeBtn, diningOption === 'dine_in' && styles.modeBtnActive]}
+            onPress={() => setDiningOption('dine_in')}
+          >
+            <Text style={[styles.modeText, diningOption === 'dine_in' && styles.modeTextActive]}>
+              🍽️ Dine-In
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modeBtn, diningOption === 'dabba' && styles.modeBtnActive]}
+            onPress={() => setDiningOption('dabba')}
+          >
+            <Text style={[styles.modeText, diningOption === 'dabba' && styles.modeTextActive]}>
+              📦 Pack Dabba
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Viewfinder */}
         <View style={styles.viewfinderContainer}>
           <View style={styles.viewfinder}>
@@ -305,7 +327,34 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
     textAlign: 'center',
     paddingHorizontal: Spacing.xl,
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.md,
+  },
+  modeContainer: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: Radius.full,
+    padding: 4,
+    marginHorizontal: Spacing.xl,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  modeBtn: {
+    flex: 1,
+    paddingVertical: Spacing.xs + 2,
+    alignItems: 'center',
+    borderRadius: Radius.full,
+  },
+  modeBtnActive: {
+    backgroundColor: Colors.primary,
+  },
+  modeText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+  },
+  modeTextActive: {
+    color: '#ffffff',
   },
   viewfinderContainer: {
     flex: 1,

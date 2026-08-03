@@ -28,6 +28,8 @@ interface DashboardStats {
   unpaidInvoicesCount: number;
   unpaidInvoicesAmount: number;
   expiringThisWeek: number;
+  dineInCount: number;
+  dabbaCount: number;
   todayMenus: Array<{ meal_type: string; items: string[] }>;
 }
 
@@ -66,6 +68,8 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
     unpaidInvoicesCount: 0,
     unpaidInvoicesAmount: 0,
     expiringThisWeek: 0,
+    dineInCount: 0,
+    dabbaCount: 0,
     todayMenus: [],
   });
   const [loading, setLoading] = useState(true);
@@ -96,7 +100,7 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
           .eq('is_active', true),
         supabase
           .from('attendance_records')
-          .select('id', { count: 'exact', head: true })
+          .select('id, dining_option')
           .eq('tenant_id', tenantId)
           .eq('status', 'present')
           .gte('scanned_at', `${today}T00:00:00`)
@@ -132,6 +136,11 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
       ]);
 
       const totalStudents = studentsRes.count ?? 0;
+      const attendanceList = (attendanceRes.data ?? []) as any[];
+      const todayAttendance = attendanceList.length;
+      const dineInCount = attendanceList.filter((r) => r.dining_option !== 'dabba').length;
+      const dabbaCount = attendanceList.filter((r) => r.dining_option === 'dabba').length;
+
       // Get unique students on leave today
       const uniqueStudentsOnLeave = new Set((leavesRes.data ?? []).map(r => r.student_id)).size;
       const onLeave = uniqueStudentsOnLeave;
@@ -141,15 +150,17 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
       );
 
       setStats({
-        messName: tenantRes.data?.name ?? 'Your Mess',
         totalStudents,
-        todayAttendance: attendanceRes.count ?? 0,
+        todayAttendance,
         activeSessions: sessionsRes.count ?? 0,
+        messName: (tenantRes.data as any)?.name ?? 'Mess Admin',
         totalOnLeaveToday: onLeave,
         cookFor: Math.max(0, totalStudents - onLeave),
         unpaidInvoicesCount: unpaidInvoicesRes.data?.length ?? 0,
         unpaidInvoicesAmount: unpaidAmount,
         expiringThisWeek: expiringSubsRes.count ?? 0,
+        dineInCount,
+        dabbaCount,
         todayMenus: menusRes.data ?? [],
       });
     } catch (err: any) {
@@ -284,6 +295,22 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
           <View>
             <Text style={styles.cookForNumber}>{stats.cookFor}</Text>
             <Text style={styles.cookForSub2}>students</Text>
+          </View>
+        </Card>
+
+        {/* ✨ NEW: Live Kitchen Packing Widget (Dine-In vs Dabba) */}
+        <Card style={styles.packingCard}>
+          <Text style={styles.packingTitle}>📦 Today's Kitchen Packing Breakdown</Text>
+          <View style={styles.packingRow}>
+            <View style={styles.packingBox}>
+              <Text style={styles.packingValue}>🍽️ {stats.dineInCount}</Text>
+              <Text style={styles.packingLabel}>Dine-In Plates</Text>
+            </View>
+            <View style={styles.packingDivider} />
+            <View style={styles.packingBox}>
+              <Text style={styles.packingValue}>📦 {stats.dabbaCount}</Text>
+              <Text style={styles.packingLabel}>Dabbas Packed</Text>
+            </View>
           </View>
         </Card>
 
@@ -437,6 +464,17 @@ const styles = StyleSheet.create({
   cookForSub: { fontSize: FontSize.sm, color: Colors.textMuted, marginTop: 2 },
   cookForNumber: { fontSize: 40, fontWeight: FontWeight.heavy, color: Colors.primary, textAlign: 'right' },
   cookForSub2: { fontSize: FontSize.xs, color: Colors.textMuted, textAlign: 'right' },
+
+  // Kitchen Packing Breakdown Card
+  packingCard: {
+    backgroundColor: Colors.surface,
+  },
+  packingTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.text, marginBottom: Spacing.md },
+  packingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  packingBox: { flex: 1, alignItems: 'center' },
+  packingValue: { fontSize: FontSize.xl, fontWeight: FontWeight.heavy, color: Colors.text },
+  packingLabel: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2, fontWeight: FontWeight.semibold },
+  packingDivider: { width: 1, height: 32, backgroundColor: Colors.border },
 
   // Alerts
   alertsRow: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.xl },

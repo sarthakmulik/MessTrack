@@ -40,6 +40,7 @@ serve(async (req) => {
       geo_lng = null,
       device_id = null,
       is_mocked = false,
+      dining_option = 'dine_in',
     } = body;
 
     // ── CHECK 0: Anti-Fraud Fake GPS ──
@@ -238,6 +239,7 @@ serve(async (req) => {
     }
 
     // ── INSERT: Record attendance ──
+    const finalDiningOption = dining_option === 'dabba' ? 'dabba' : 'dine_in';
     const { error: insertError } = await supabaseAdmin
       .from('attendance_records')
       .insert({
@@ -250,6 +252,7 @@ serve(async (req) => {
         geo_lat,
         geo_lng,
         status: 'present',
+        dining_option: finalDiningOption,
         synced_offline: false,
       });
 
@@ -274,11 +277,17 @@ serve(async (req) => {
       .eq('meal_session_id', session.id)
       .eq('status', 'present');
 
+    const isDabba = finalDiningOption === 'dabba';
+    const responseMsg = isDabba
+      ? `Attendance marked for Dabba (Tiffin) packing! 📦 Collect your tiffin from counter.`
+      : `Attendance marked for Dine-In! 🍽️ Enjoy your ${session.meal_type}.`;
+
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Attendance marked! Enjoy your ${session.meal_type}.`,
+        message: responseMsg,
         meal_type: session.meal_type,
+        dining_option: finalDiningOption,
         scanned_at: new Date().toISOString(),
         session_scan_count: count,
       }),
