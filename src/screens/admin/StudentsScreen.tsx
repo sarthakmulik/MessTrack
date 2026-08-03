@@ -21,19 +21,29 @@ import { Colors, Spacing, Radius, FontSize, FontWeight, Shadows } from '../../th
 import { Student, Subscription, SubscriptionPlan } from '../../types';
 
 interface StudentWithSub extends Student {
-  is_active: boolean; // Added for soft delete
+  is_active: boolean;
   active_subscriptions: {
     id: string;
     status: string;
     end_date: string;
     plan_name?: string;
+    duration_days?: number;
   }[];
+}
+
+interface RenewalReq {
+  id: string;
+  student_id: string;
+  student_name: string;
+  requested_at: string;
+  notes?: string;
 }
 
 export default function StudentsScreen({ navigation }: { navigation: any }) {
   const { tenantId } = useAuth();
   const [students, setStudents] = useState<StudentWithSub[]>([]);
   const [filtered, setFiltered] = useState<StudentWithSub[]>([]);
+  const [pendingRenewals, setPendingRenewals] = useState<RenewalReq[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
@@ -47,6 +57,23 @@ export default function StudentsScreen({ navigation }: { navigation: any }) {
   const fetchStudents = useCallback(async () => {
     if (!tenantId) return;
     try {
+      // 1. Fetch pending renewal requests
+      const { data: renewalData } = await supabase
+        .from('renewal_requests')
+        .select('*, students(name)')
+        .eq('tenant_id', tenantId)
+        .eq('status', 'pending')
+        .order('requested_at', { ascending: false });
+
+      setPendingRenewals((renewalData || []).map((r: any) => ({
+        id: r.id,
+        student_id: r.student_id,
+        student_name: r.students?.name || 'Student',
+        requested_at: r.requested_at,
+        notes: r.notes,
+      })));
+
+      // 2. Fetch students & active subscriptions
       const { data, error } = await supabase
         .from('students')
         .select(`
@@ -55,7 +82,7 @@ export default function StudentsScreen({ navigation }: { navigation: any }) {
             id,
             status,
             end_date,
-            subscription_plans ( name )
+            subscription_plans ( name, duration_days )
           )
         `)
         .eq('tenant_id', tenantId)
@@ -64,12 +91,12 @@ export default function StudentsScreen({ navigation }: { navigation: any }) {
       if (error) throw error;
 
       const mapped: StudentWithSub[] = (data ?? []).map((s: any) => {
-        // Find all active subscriptions
         const activeSubs = (s.subscriptions || []).filter((sub: any) => sub.status === 'active').map((sub: any) => ({
-            id: sub.id,
-            status: sub.status,
-            end_date: sub.end_date,
-            plan_name: sub.subscription_plans?.name,
+          id: sub.id,
+          status: sub.status,
+          end_date: sub.end_date,
+          plan_name: sub.subscription_plans?.name,
+          duration_days: sub.subscription_plans?.duration_days ?? 30,
         }));
 
         return {
@@ -114,13 +141,54 @@ export default function StudentsScreen({ navigation }: { navigation: any }) {
     fetchStudents();
   };
 
-  // ─── CRUD Actions ───
+  // 1-Tap Renewal Approval
+  const handleApproveRenewal = async (req: RenewalReq) => {
+    try {
+      const student = students.find((s) => s.id === req.student_id);
+      const activeSub = student?.active_subscriptions[0];
+
+      if (activeSub) {
+        // Extend existing subscription by +30 days (or duration_days)
+        const currentEnd = new Date(activeSub.end_date);
+        const newEnd = new Date(currentEnd.getTime() + (activeSub.duration_days ?? 30) * 24 * 60 * 60 * 1000);
+        const newEndStr = newEnd.toISOString().split('T')[0];
+
+        await supabase
+          .from('subscriptions')
+          .update({ end_date: newEndStr })
+          .eq('id', activeSub.id);
+      }
+
+      // Mark request approved
+      await supabase
+        .from('renewal_requests')
+        .update({ status: 'approved' })
+        .eq('id', req.id);
+
+      Alert.alert('Success 🎉', `Approved renewal for ${req.student_name}! Pass extended.`);
+      fetchStudents();
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    }
+  };
+
+  const handleRejectRenewal = async (reqId: string) => {
+    try {
+      await supabase
+        .from('renewal_requests')
+        .update({ status: 'rejected' })
+        .eq('id', reqId);
+      fetchStudents();
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    }
+  };
 
   const toggleStudentStatus = async (studentId: string, currentStatus: boolean) => {
     Alert.alert(
       currentStatus ? 'Deactivate Student?' : 'Reactivate Student?',
       currentStatus 
-        ? 'This student will no longer be able to scan QR codes for this mess. Their past billing and attendance records will be preserved.'
+        ? 'This student will no longer be able to scan QR codes for this mess.'
         : 'This student will be able to scan QR codes again.',
       [
         { text: 'Cancel', style: 'cancel' },
@@ -144,32 +212,6 @@ export default function StudentsScreen({ navigation }: { navigation: any }) {
     );
   };
 
-  const resetDeviceBinding = async (studentId: string) => {
-    Alert.alert(
-      'Reset Device Binding?',
-      'This will allow the student to log in and scan from a new phone. Use this if they lost their old phone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Reset Device', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from('students')
-                .update({ device_id: null })
-                .eq('id', studentId);
-              if (error) throw error;
-              Alert.alert('Success', 'Device binding has been reset.');
-            } catch (err: any) {
-              Alert.alert('Error', err.message);
-            }
-          }
-        }
-      ]
-    );
-  };
-
   const openPlanModal = async (student: StudentWithSub) => {
     setSelectedStudent(student);
     setPlanModalVisible(true);
@@ -179,347 +221,308 @@ export default function StudentsScreen({ navigation }: { navigation: any }) {
         .from('subscription_plans')
         .select('*')
         .eq('tenant_id', tenantId)
-        .eq('is_active', true)
-        .order('price');
+        .eq('is_active', true);
       if (error) throw error;
-      setPlans(data || []);
+      setPlans(data ?? []);
     } catch (err: any) {
-      Alert.alert('Error fetching plans', err.message);
+      Alert.alert('Error', err.message);
     } finally {
       setLoadingPlans(false);
     }
   };
 
-  const assignPlanToStudent = async (plan: SubscriptionPlan) => {
+  const assignPlan = async (plan: SubscriptionPlan) => {
     if (!selectedStudent || !tenantId) return;
-
-    // If student already has active subscriptions, ask whether to Replace or Add
-    if (selectedStudent.active_subscriptions.length > 0) {
-      Alert.alert(
-        'Assign Plan',
-        `Does this new "${plan.name}" replace the current plan, or run alongside it?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Replace Current', style: 'destructive', onPress: () => processAssignPlan(plan, true) },
-          { text: 'Run Alongside (Overlap)', onPress: () => processAssignPlan(plan, false) },
-        ]
-      );
-    } else {
-      Alert.alert(
-        'Assign Plan',
-        `Assign "${plan.name}" to ${selectedStudent.name}?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Assign', onPress: () => processAssignPlan(plan, false) }
-        ]
-      );
-    }
-  };
-
-  const processAssignPlan = async (plan: SubscriptionPlan, replaceExisting: boolean) => {
-    setPlanModalVisible(false);
     try {
-      if (replaceExisting) {
-        // 1. Mark existing active subscriptions as cancelled
-        await supabase
-          .from('subscriptions')
-          .update({ status: 'cancelled' })
-          .eq('student_id', selectedStudent!.id)
-          .eq('status', 'active');
-      }
-
-      // 2. Create new subscription
-      const startDate = new Date();
+      const today = new Date().toISOString().split('T')[0];
       const endDate = new Date();
-      endDate.setDate(startDate.getDate() + plan.duration_days);
+      endDate.setDate(endDate.getDate() + plan.duration_days);
+      const endDateStr = endDate.toISOString().split('T')[0];
 
-      const { error } = await supabase
-        .from('subscriptions')
-        .insert({
-          student_id: selectedStudent!.id,
-          plan_id: plan.id,
-          tenant_id: tenantId,
-          start_date: startDate.toISOString().split('T')[0],
-          end_date: endDate.toISOString().split('T')[0],
-          status: 'active',
-          amount_paid: 0,
-        });
+      const { error } = await supabase.from('subscriptions').insert({
+        student_id: selectedStudent.id,
+        tenant_id: tenantId,
+        plan_id: plan.id,
+        start_date: today,
+        end_date: endDateStr,
+        status: 'active',
+      });
 
       if (error) throw error;
-      Alert.alert('Success', 'Plan assigned successfully!');
+
+      Alert.alert('Success', `Assigned ${plan.name} to ${selectedStudent.name}`);
+      setPlanModalVisible(false);
       fetchStudents();
     } catch (err: any) {
       Alert.alert('Error', err.message);
     }
   };
 
-  const handleStudentPress = (student: StudentWithSub) => {
-    Alert.alert(
-      'Manage Student',
-      student.name,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Assign/Update Plan', onPress: () => openPlanModal(student) },
-        { text: 'Reset Device Binding', onPress: () => resetDeviceBinding(student.id) },
-        { 
-          text: student.is_active ? 'Deactivate Account' : 'Reactivate Account', 
-          style: student.is_active ? 'destructive' : 'default',
-          onPress: () => toggleStudentStatus(student.id, student.is_active) 
-        },
-      ]
+  if (loading && !refreshing) {
+    return <LoadingState message="Loading student roster..." />;
+  }
+
+  const renderStudentItem = ({ item }: { item: StudentWithSub }) => {
+    return (
+      <Card style={[styles.card, !item.is_active && styles.inactiveCard]}>
+        <View style={styles.cardHeader}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{item.name.charAt(0).toUpperCase()}</Text>
+          </View>
+          <View style={styles.studentInfo}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={styles.studentName}>{item.name}</Text>
+              {!item.is_active && (
+                <Badge label="INACTIVE" variant="error" />
+              )}
+            </View>
+            <Text style={styles.studentSubtext}>{item.email}</Text>
+            {item.phone ? <Text style={styles.studentSubtext}>📱 {item.phone}</Text> : null}
+          </View>
+        </View>
+
+        {/* Active Subscriptions List */}
+        <View style={styles.subscriptionSection}>
+          {item.active_subscriptions.length > 0 ? (
+            item.active_subscriptions.map((sub) => (
+              <View key={sub.id} style={styles.subRow}>
+                <Badge label="ACTIVE PLAN" variant="success" dot />
+                <Text style={styles.planName}>{sub.plan_name ?? 'Custom Plan'}</Text>
+                <Text style={styles.expiryText}>Expires: {sub.end_date}</Text>
+              </View>
+            ))
+          ) : (
+            <View style={styles.noSubRow}>
+              <Badge label="NO ACTIVE PLAN" variant="warning" />
+            </View>
+          )}
+        </View>
+
+        {/* Action Controls */}
+        <View style={styles.actionRow}>
+          <Button
+            title="+ Assign Plan"
+            variant="outline"
+            size="small"
+            onPress={() => openPlanModal(item)}
+            style={styles.actionBtn}
+          />
+          <TouchableOpacity
+            style={[styles.toggleBtn, !item.is_active && styles.reactivateBtn]}
+            onPress={() => toggleStudentStatus(item.id, item.is_active)}
+          >
+            <Text style={[styles.toggleBtnText, !item.is_active && styles.reactivateBtnText]}>
+              {item.is_active ? 'Deactivate' : 'Reactivate'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Card>
     );
   };
 
-  const renderStudent = ({ item }: { item: StudentWithSub }) => (
-    <Card 
-      style={[styles.card, !item.is_active && styles.cardInactive]}
-      onPress={() => handleStudentPress(item)}
-    >
-      <View style={[styles.avatar, !item.is_active && { backgroundColor: Colors.border }]}>
-        <Text style={styles.avatarText}>{item.name[0].toUpperCase()}</Text>
-      </View>
-      <View style={styles.cardInfo}>
-        <Text style={[styles.studentName, !item.is_active && { color: Colors.textMuted }]}>
-          {item.name} {!item.is_active && '(Inactive)'}
-        </Text>
-        <Text style={styles.studentEmail}>{item.email}</Text>
-        {item.phone ? <Text style={styles.studentPhone}>📱 {item.phone}</Text> : null}
-        
-        {item.active_subscriptions.length > 0 ? (
-          item.active_subscriptions.map((sub, idx) => (
-            <View key={sub.id} style={styles.subRow}>
-              <Badge 
-                label={sub.status} 
-                variant={
-                  sub.status === 'active' ? 'success' :
-                  sub.status === 'expired' ? 'error' : 'default'
-                }
-                style={{ marginRight: 8 }}
-              />
-              {sub.plan_name ? (
-                <Text style={styles.planName}>{sub.plan_name}</Text>
-              ) : null}
-            </View>
-          ))
-        ) : (
-          <View style={styles.subRow}>
-            <Badge label="NO PLAN" variant="default" style={{ marginRight: 8 }} />
-          </View>
-        )}
-      </View>
-    </Card>
-  );
-
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Input
-          placeholder="Search students..."
-          value={search}
-          onChangeText={setSearch}
-        />
+      {/* Header Bar */}
+      <View style={styles.topHeader}>
+        <View style={styles.searchContainer}>
+          <Input
+            placeholder="Search students by name, email..."
+            value={search}
+            onChangeText={setSearch}
+            containerStyle={{ marginBottom: 0 }}
+          />
+        </View>
+        <TouchableOpacity
+          style={styles.addFab}
+          onPress={() => navigation.navigate('AddStudent')}
+        >
+          <Text style={styles.addFabText}>+ Student</Text>
+        </TouchableOpacity>
       </View>
-      
-      {loading ? (
-        <LoadingState fullScreen={false} />
-      ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={(item) => item.id}
-          renderItem={renderStudent}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />
-          }
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>No students found.</Text>
-          }
-        />
+
+      {/* Pending Renewal Requests Section */}
+      {pendingRenewals.length > 0 && (
+        <View style={styles.renewalSection}>
+          <Text style={styles.renewalSectionTitle}>⏰ Pending Renewal Requests ({pendingRenewals.length})</Text>
+          {pendingRenewals.map((req) => (
+            <View key={req.id} style={styles.renewalCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.renewalStudentName}>{req.student_name}</Text>
+                <Text style={styles.renewalSub}>
+                  Requested on {new Date(req.requested_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                </Text>
+              </View>
+
+              <View style={styles.renewalActions}>
+                <TouchableOpacity style={styles.approveBtn} onPress={() => handleApproveRenewal(req)}>
+                  <Text style={styles.approveBtnText}>Approve & Extend ⚡</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.rejectBtn} onPress={() => handleRejectRenewal(req.id)}>
+                  <Text style={styles.rejectBtnText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
       )}
 
-      {/* Plan Assignment Modal */}
-      <Modal visible={planModalVisible} animationType="slide" transparent={true}>
+      {/* Students List */}
+      <FlatList
+        data={filtered}
+        keyExtractor={(item) => item.id}
+        renderItem={renderStudentItem}
+        contentContainerStyle={styles.listContainer}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>No students found.</Text>
+          </View>
+        }
+      />
+
+      {/* Assign Plan Modal */}
+      <Modal
+        visible={planModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPlanModalVisible(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Assign Plan to {selectedStudent?.name}</Text>
-            
+            <Text style={styles.modalTitle}>Assign Subscription Plan</Text>
+            <Text style={styles.modalSub}>
+              Assigning plan for {selectedStudent?.name}
+            </Text>
+
             {loadingPlans ? (
-              <LoadingState fullScreen={false} />
+              <ActivityIndicator color={Colors.primary} style={{ marginVertical: Spacing.xl }} />
             ) : plans.length === 0 ? (
-              <Text style={styles.emptyText}>No active plans found. Create one first.</Text>
+              <Text style={{ color: Colors.textMuted, marginVertical: Spacing.lg }}>
+                No active plans available. Create a plan in the Plans screen first.
+              </Text>
             ) : (
-              <FlatList
-                data={plans}
-                keyExtractor={(item) => item.id}
-                style={{ maxHeight: 300 }}
-                renderItem={({ item }) => (
-                  <View style={styles.planOption}>
-                    <View>
-                      <Text style={styles.planOptionName}>{item.name}</Text>
-                      <Text style={styles.planOptionDetails}>
-                        ₹{item.price} • {item.duration_days} Days
-                      </Text>
-                    </View>
-                    <Button 
-                      title="Assign" 
-                      size="small"
-                      fullWidth={false}
-                      onPress={() => assignPlanToStudent(item)} 
-                    />
+              plans.map((p) => (
+                <TouchableOpacity
+                  key={p.id}
+                  style={styles.planOptionCard}
+                  onPress={() => assignPlan(p)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.planOptionName}>{p.name}</Text>
+                    <Text style={styles.planOptionSub}>
+                      {p.duration_days} Days · ₹{p.price}
+                    </Text>
                   </View>
-                )}
-              />
+                  <Badge label="Select" variant="info" />
+                </TouchableOpacity>
+              ))
             )}
-            
-            <Button 
-              title="Close"
+
+            <Button
+              title="Cancel"
               variant="outline"
-              style={{ marginTop: Spacing.lg }}
               onPress={() => setPlanModalVisible(false)}
+              style={{ marginTop: Spacing.md }}
             />
           </View>
         </View>
       </Modal>
-
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => navigation.navigate('AddStudent')}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.fabIcon}>+</Text>
-      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  header: {
-    padding: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  listContent: {
-    padding: Spacing.md,
-    paddingBottom: 100,
-  },
-  card: {
+  container: { flex: 1, backgroundColor: Colors.background },
+  topHeader: {
     flexDirection: 'row',
+    padding: Spacing.md,
+    alignItems: 'center',
+    gap: Spacing.sm,
   },
-  cardInactive: {
-    opacity: 0.6,
+  searchContainer: { flex: 1 },
+  addFab: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
+    borderRadius: Radius.md,
   },
+  addFabText: { color: '#ffffff', fontWeight: FontWeight.bold, fontSize: FontSize.sm },
+
+  renewalSection: { paddingHorizontal: Spacing.md, marginBottom: Spacing.sm },
+  renewalSectionTitle: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.warning, marginBottom: 6 },
+  renewalCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.warning + '15',
+    borderWidth: 1,
+    borderColor: Colors.warning,
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.xs,
+  },
+  renewalStudentName: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.text },
+  renewalSub: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2 },
+  renewalActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  approveBtn: { backgroundColor: Colors.success, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs + 2, borderRadius: Radius.full },
+  approveBtnText: { color: '#ffffff', fontSize: FontSize.xs, fontWeight: FontWeight.bold },
+  rejectBtn: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs + 2, borderRadius: Radius.full },
+  rejectBtnText: { color: Colors.textMuted, fontSize: FontSize.xs, fontWeight: FontWeight.bold },
+
+  listContainer: { padding: Spacing.md, paddingBottom: 40 },
+  card: { marginBottom: Spacing.md },
+  inactiveCard: { opacity: 0.5 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.sm },
   avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: Colors.primary + '33',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.primary + '20',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.md,
   },
-  avatarText: {
-    color: Colors.primary,
-    fontSize: FontSize.xl,
-    fontWeight: FontWeight.bold,
+  avatarText: { color: Colors.primary, fontWeight: FontWeight.bold, fontSize: FontSize.lg },
+  studentInfo: { flex: 1 },
+  studentName: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.text },
+  studentSubtext: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 1 },
+
+  subscriptionSection: {
+    backgroundColor: Colors.background,
+    padding: Spacing.sm,
+    borderRadius: Radius.md,
+    marginVertical: Spacing.xs,
   },
-  cardInfo: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  studentName: {
-    color: Colors.text,
-    fontSize: FontSize.lg,
-    fontWeight: FontWeight.semibold,
-    marginBottom: 2,
-  },
-  studentEmail: {
-    color: Colors.textMuted,
-    fontSize: FontSize.sm,
-    marginBottom: 2,
-  },
-  studentPhone: {
-    color: Colors.textMuted,
-    fontSize: FontSize.sm,
-    marginBottom: 6,
-  },
-  subRow: {
+  subRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  planName: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.text, flex: 1, marginLeft: Spacing.xs },
+  expiryText: { fontSize: FontSize.xs, color: Colors.textMuted },
+  noSubRow: { alignItems: 'flex-start' },
+
+  actionRow: { flexDirection: 'row', marginTop: Spacing.sm, gap: Spacing.sm, alignItems: 'center' },
+  actionBtn: { flex: 1 },
+  toggleBtn: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, borderRadius: Radius.sm, borderWidth: 1, borderColor: Colors.border },
+  toggleBtnText: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: FontWeight.medium },
+  reactivateBtn: { borderColor: Colors.success, backgroundColor: Colors.success + '10' },
+  reactivateBtnText: { color: Colors.success, fontWeight: FontWeight.bold },
+
+  emptyState: { alignItems: 'center', paddingTop: 40 },
+  emptyText: { color: Colors.textMuted, fontSize: FontSize.md },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: Colors.surface, borderTopLeftRadius: Radius.xl, borderTopRightRadius: Radius.xl, padding: Spacing.lg },
+  modalTitle: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.text },
+  modalSub: { fontSize: FontSize.xs, color: Colors.textMuted, marginBottom: Spacing.md, marginTop: 2 },
+  planOptionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    backgroundColor: Colors.background,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    marginBottom: Spacing.xs,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  planName: {
-    color: Colors.text,
-    fontSize: FontSize.sm,
-  },
-  emptyText: {
-    color: Colors.textMuted,
-    textAlign: 'center',
-    marginTop: Spacing.xl,
-    fontSize: FontSize.md,
-  },
-  fab: {
-    position: 'absolute',
-    bottom: Spacing.xl,
-    right: Spacing.xl,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  fabIcon: {
-    color: '#fff',
-    fontSize: 32,
-    fontWeight: '300',
-    marginTop: -2,
-  },
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: Radius.xl,
-    borderTopRightRadius: Radius.xl,
-    padding: Spacing.lg,
-    paddingBottom: Spacing.xxl,
-    ...Shadows.large,
-  },
-  modalTitle: {
-    color: Colors.text,
-    fontSize: FontSize.lg,
-    fontWeight: FontWeight.bold,
-    marginBottom: Spacing.lg,
-  },
-  planOption: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  planOptionName: {
-    color: Colors.text,
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.semibold,
-  },
-  planOptionDetails: {
-    color: Colors.textMuted,
-    fontSize: FontSize.sm,
-    marginTop: 4,
-  }
+  planOptionName: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.text },
+  planOptionSub: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2 },
 });

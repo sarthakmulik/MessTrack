@@ -30,6 +30,7 @@ interface DashboardStats {
   expiringThisWeek: number;
   dineInCount: number;
   dabbaCount: number;
+  pendingRenewalsCount: number;
   todayMenus: Array<{ meal_type: string; items: string[] }>;
 }
 
@@ -70,6 +71,7 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
     expiringThisWeek: 0,
     dineInCount: 0,
     dabbaCount: 0,
+    pendingRenewalsCount: 0,
     todayMenus: [],
   });
   const [loading, setLoading] = useState(true);
@@ -91,6 +93,7 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
         unpaidInvoicesRes,
         expiringSubsRes,
         menusRes,
+        renewalsRes,
       ] = await Promise.all([
         supabase.from('tenants').select('name').eq('id', tenantId).single(),
         supabase
@@ -133,6 +136,11 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
           .select('meal_type, items')
           .eq('tenant_id', tenantId)
           .eq('menu_date', today),
+        supabase
+          .from('renewal_requests')
+          .select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId)
+          .eq('status', 'pending'),
       ]);
 
       const totalStudents = studentsRes.count ?? 0;
@@ -161,6 +169,7 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
         expiringThisWeek: expiringSubsRes.count ?? 0,
         dineInCount,
         dabbaCount,
+        pendingRenewalsCount: renewalsRes.count ?? 0,
         todayMenus: menusRes.data ?? [],
       });
     } catch (err: any) {
@@ -298,7 +307,7 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
           </View>
         </Card>
 
-        {/* ✨ NEW: Live Kitchen Packing Widget (Dine-In vs Dabba) */}
+        {/* ✨ LIVE: Kitchen Packing Widget (Dine-In vs Dabba) */}
         <Card style={styles.packingCard}>
           <Text style={styles.packingTitle}>📦 Today's Kitchen Packing Breakdown</Text>
           <View style={styles.packingRow}>
@@ -313,6 +322,20 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
             </View>
           </View>
         </Card>
+
+        {/* ⏰ Pending Renewal Requests Alert Card */}
+        {stats.pendingRenewalsCount > 0 && (
+          <TouchableOpacity
+            style={styles.renewalAlertCard}
+            onPress={() => navigation.navigate('Students')}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.renewalAlertTitle}>⏰ {stats.pendingRenewalsCount} Renewal Request(s)</Text>
+              <Text style={styles.renewalAlertSub}>Students requested pass renewals. Tap to approve & extend.</Text>
+            </View>
+            <Badge label="APPROVE ⚡" variant="warning" />
+          </TouchableOpacity>
+        )}
 
         {/* ✨ NEW: Alerts Row */}
         {(stats.unpaidInvoicesCount > 0 || stats.expiringThisWeek > 0) && (
@@ -475,6 +498,20 @@ const styles = StyleSheet.create({
   packingValue: { fontSize: FontSize.xl, fontWeight: FontWeight.heavy, color: Colors.text },
   packingLabel: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2, fontWeight: FontWeight.semibold },
   packingDivider: { width: 1, height: 32, backgroundColor: Colors.border },
+
+  // Renewal Alert Card
+  renewalAlertCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.warning + '15',
+    borderWidth: 1,
+    borderColor: Colors.warning,
+    borderRadius: Radius.xl,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  renewalAlertTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.warning },
+  renewalAlertSub: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2 },
 
   // Alerts
   alertsRow: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.xl },
