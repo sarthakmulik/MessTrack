@@ -14,8 +14,8 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { Colors, FontSize, FontWeight, Radius, Spacing, Shadows } from '../../theme/tokens';
-import Button from '../../components/Button';
-import Card from '../../components/Card';
+import { Button } from '../../components/ui/Button';
+import Badge from '../../components/Badge';
 
 const MEAL_TYPES = ['breakfast', 'lunch', 'dinner'];
 const MEAL_EMOJI: Record<string, string> = { breakfast: '🌅', lunch: '☀️', dinner: '🌙' };
@@ -30,14 +30,18 @@ interface MenuEntry {
   meal_type: string;
   items: string[];
   notes?: string;
+  is_special?: boolean;
+  category?: 'veg' | 'non_veg' | 'special';
 }
 
 export default function MenuScreen({ navigation }: any) {
   const { tenantId, profile } = useAuth();
   const [menus, setMenus] = useState<Record<string, MenuEntry>>({});
-  const [editMode, setEditMode] = useState<string | null>(null); // which meal type is open for editing
+  const [editMode, setEditMode] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
   const [notesText, setNotesText] = useState('');
+  const [isSpecial, setIsSpecial] = useState(false);
+  const [category, setCategory] = useState<'veg' | 'non_veg' | 'special'>('veg');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -57,7 +61,14 @@ export default function MenuScreen({ navigation }: any) {
 
       const menuMap: Record<string, MenuEntry> = {};
       (data ?? []).forEach((m) => {
-        menuMap[m.meal_type] = { id: m.id, meal_type: m.meal_type, items: m.items, notes: m.notes };
+        menuMap[m.meal_type] = {
+          id: m.id,
+          meal_type: m.meal_type,
+          items: m.items,
+          notes: m.notes,
+          is_special: m.is_special ?? false,
+          category: m.category ?? 'veg',
+        };
       });
       setMenus(menuMap);
     } catch (err: any) {
@@ -77,6 +88,8 @@ export default function MenuScreen({ navigation }: any) {
     setEditMode(mealType);
     setInputText(existing?.items?.join(', ') ?? '');
     setNotesText(existing?.notes ?? '');
+    setIsSpecial(existing?.is_special ?? false);
+    setCategory(existing?.category ?? 'veg');
   };
 
   const handleSave = async (mealType: string) => {
@@ -89,7 +102,6 @@ export default function MenuScreen({ navigation }: any) {
         .filter(Boolean);
 
       if (items.length === 0) {
-        // Delete if empty
         if (menus[mealType]?.id) {
           await supabase.from('daily_menus').delete().eq('id', menus[mealType].id);
         }
@@ -106,6 +118,8 @@ export default function MenuScreen({ navigation }: any) {
         meal_type: mealType,
         items,
         notes: notesText.trim() || null,
+        is_special: isSpecial,
+        category: category,
         created_by: profile?.id,
       };
 
@@ -119,7 +133,14 @@ export default function MenuScreen({ navigation }: any) {
 
       setMenus((prev) => ({
         ...prev,
-        [mealType]: { id: data.id, meal_type: mealType, items, notes: notesText.trim() || undefined },
+        [mealType]: {
+          id: data.id,
+          meal_type: mealType,
+          items,
+          notes: notesText.trim() || undefined,
+          is_special: isSpecial,
+          category: category,
+        },
       }));
       setEditMode(null);
     } catch (err: any) {
@@ -138,98 +159,136 @@ export default function MenuScreen({ navigation }: any) {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
+
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Daily Menu Manager 🍛</Text>
+        <Text style={styles.subtitle}>{todayStr}</Text>
+      </View>
+
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchMenus(); }} tintColor={Colors.primary} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => { setRefreshing(true); fetchMenus(); }}
+            tintColor={Colors.primary}
+          />
         }
       >
-        <View style={styles.dateHeader}>
-          <Text style={styles.dateTitle}>📋 Today's Menu</Text>
-          <Text style={styles.dateSubtitle}>{todayStr}</Text>
-        </View>
-
-        <Text style={styles.hint}>
-          Tap each meal to post what's being served. Students will see this on their dashboard and can rate it after eating.
-        </Text>
-
         {MEAL_TYPES.map((mealType) => {
-          const menu = menus[mealType];
+          const entry = menus[mealType];
           const isEditing = editMode === mealType;
-          const color = MEAL_COLORS[mealType];
+          const color = MEAL_COLORS[mealType] ?? Colors.primary;
 
           return (
-            <Card key={mealType} style={styles.mealCard}>
-              <View style={styles.mealHeader}>
-                <View style={styles.mealTitleRow}>
-                  <View style={[styles.mealDot, { backgroundColor: color }]} />
+            <View key={mealType} style={styles.card}>
+              <View style={styles.cardHeader}>
+                <View style={styles.cardHeaderLeft}>
                   <Text style={styles.mealEmoji}>{MEAL_EMOJI[mealType]}</Text>
-                  <Text style={[styles.mealTitle, { color }]}>
+                  <Text style={styles.mealTitle}>
                     {mealType.charAt(0).toUpperCase() + mealType.slice(1)}
                   </Text>
+                  {entry?.is_special && <Badge label="⭐ Sunday Special" variant="warning" />}
+                  {entry?.category === 'non_veg' && <Badge label="🔴 Non-Veg" variant="error" />}
+                  {entry?.category === 'veg' && entry && <Badge label="🟢 Veg" variant="success" />}
                 </View>
                 {!isEditing && (
                   <TouchableOpacity
-                    style={[styles.editBtn, { borderColor: color + '60', backgroundColor: color + '15' }]}
+                    style={styles.editBtn}
                     onPress={() => handleEdit(mealType)}
                   >
-                    <Text style={[styles.editBtnText, { color }]}>
-                      {menu ? '✏️ Edit' : '+ Add'}
-                    </Text>
+                    <Text style={styles.editBtnText}>{entry ? 'Edit' : '+ Add'}</Text>
                   </TouchableOpacity>
                 )}
               </View>
 
               {isEditing ? (
-                <View style={styles.editSection}>
-                  <Text style={styles.inputLabel}>Menu Items (comma separated)</Text>
+                <View style={styles.editContainer}>
+                  <Text style={styles.label}>Menu Items (comma separated)</Text>
                   <TextInput
                     style={styles.input}
                     value={inputText}
                     onChangeText={setInputText}
-                    placeholder="e.g. Dal Makhani, Jeera Rice, Roti, Salad"
+                    placeholder="e.g. Rice, Dal, Chapati, Paneer Masala"
                     placeholderTextColor={Colors.textMuted}
                     multiline
-                    autoFocus
                   />
-                  <Text style={styles.inputLabel}>Notes (optional)</Text>
+
+                  <Text style={styles.label}>Special Notes / Extra Item</Text>
                   <TextInput
-                    style={[styles.input, styles.inputShort]}
+                    style={styles.inputSmall}
                     value={notesText}
                     onChangeText={setNotesText}
-                    placeholder="e.g. No onion today, Spicy gravy"
+                    placeholder="e.g. Unlimited Gulab Jamun"
                     placeholderTextColor={Colors.textMuted}
                   />
+
+                  {/* Special Feast Toggle */}
+                  <View style={styles.specialToggleRow}>
+                    <Text style={styles.specialToggleLabel}>⭐ Mark as Sunday Special / Feast</Text>
+                    <Switch
+                      value={isSpecial}
+                      onValueChange={setIsSpecial}
+                      trackColor={{ false: Colors.border, true: Colors.warning + 'AA' }}
+                      thumbColor={isSpecial ? Colors.warning : '#f4f3f4'}
+                    />
+                  </View>
+
+                  {/* Category selector */}
+                  <Text style={styles.label}>Diet Category</Text>
+                  <View style={styles.catRow}>
+                    {(['veg', 'non_veg', 'special'] as const).map((cat) => (
+                      <TouchableOpacity
+                        key={cat}
+                        style={[styles.catBtn, category === cat && styles.catBtnActive]}
+                        onPress={() => setCategory(cat)}
+                      >
+                        <Text style={[styles.catText, category === cat && styles.catTextActive]}>
+                          {cat === 'veg' ? '🟢 Veg' : cat === 'non_veg' ? '🔴 Non-Veg' : '⭐ Feast'}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
                   <View style={styles.editActions}>
-                    <Button label="Cancel" variant="ghost" onPress={() => setEditMode(null)} size="sm" />
                     <Button
-                      label="Save Menu"
+                      title="Cancel"
+                      variant="outline"
+                      onPress={() => setEditMode(null)}
+                      style={{ flex: 1, marginRight: Spacing.sm }}
+                    />
+                    <Button
+                      title="Save Menu"
                       onPress={() => handleSave(mealType)}
-                      loading={saving}
-                      size="sm"
-                      style={{ flex: 1, marginLeft: 8 }}
+                      isLoading={saving}
+                      style={{ flex: 1 }}
                     />
                   </View>
                 </View>
-              ) : menu ? (
-                <View style={styles.menuDisplay}>
-                  <Text style={styles.menuItemsText}>{menu.items.join(' · ')}</Text>
-                  {menu.notes ? <Text style={styles.menuNotes}>📝 {menu.notes}</Text> : null}
-                </View>
               ) : (
-                <Text style={styles.noMenuText}>No menu posted yet for this meal.</Text>
+                <View>
+                  {entry && entry.items && entry.items.length > 0 ? (
+                    <View style={styles.itemsList}>
+                      {entry.items.map((item, idx) => (
+                        <View key={idx} style={styles.itemChip}>
+                          <Text style={styles.itemChipText}>• {item}</Text>
+                        </View>
+                      ))}
+                      {entry.notes && (
+                        <Text style={styles.notesText}>💡 Note: {entry.notes}</Text>
+                      )}
+                    </View>
+                  ) : (
+                    <Text style={styles.emptyText}>No menu posted for this meal yet.</Text>
+                  )}
+                </View>
               )}
-            </Card>
+            </View>
           );
         })}
-
-        <View style={styles.tipsCard}>
-          <Text style={styles.tipsTitle}>💡 Tips</Text>
-          <Text style={styles.tipsText}>• Students see today's menu on their home screen</Text>
-          <Text style={styles.tipsText}>• Students can rate meals (1-5 stars) after eating</Text>
-          <Text style={styles.tipsText}>• You can edit the menu anytime before the session ends</Text>
-        </View>
       </ScrollView>
     </View>
   );
@@ -237,57 +296,63 @@ export default function MenuScreen({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  content: { padding: Spacing.lg, paddingBottom: Spacing.xxl },
-  dateHeader: { marginBottom: Spacing.sm },
-  dateTitle: { fontSize: FontSize.xxl, fontWeight: FontWeight.heavy, color: Colors.text },
-  dateSubtitle: { fontSize: FontSize.md, color: Colors.textMuted, marginTop: 4 },
-  hint: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    lineHeight: 20,
-    marginBottom: Spacing.xl,
-    backgroundColor: Colors.primary + '15',
-    padding: Spacing.md,
-    borderRadius: Radius.md,
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.primary,
-  },
-  mealCard: { marginBottom: Spacing.md },
-  mealHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  mealTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  mealDot: { width: 10, height: 10, borderRadius: 5 },
-  mealEmoji: { fontSize: 20 },
-  mealTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold },
-  editBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radius.full, borderWidth: 1.5 },
-  editBtnText: { fontSize: FontSize.sm, fontWeight: FontWeight.bold },
-  editSection: { marginTop: 8 },
-  inputLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.textSecondary, marginBottom: 6 },
-  input: {
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    borderRadius: Radius.md,
-    padding: 12,
-    fontSize: FontSize.md,
-    color: Colors.text,
-    minHeight: 80,
-    textAlignVertical: 'top',
-    marginBottom: 12,
+  header: { padding: Spacing.lg, paddingBottom: 0 },
+  title: { fontSize: FontSize.xxl, fontWeight: FontWeight.heavy, color: Colors.text },
+  subtitle: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: FontWeight.semibold, marginTop: 2 },
+
+  scroll: { flex: 1 },
+  content: { padding: Spacing.lg, paddingBottom: 40 },
+
+  card: {
     backgroundColor: Colors.surface,
-  },
-  inputShort: { minHeight: 44, textAlignVertical: 'center' },
-  editActions: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-  menuDisplay: { marginTop: 4 },
-  menuItemsText: { fontSize: FontSize.md, color: Colors.text, lineHeight: 22 },
-  menuNotes: { fontSize: FontSize.sm, color: Colors.textMuted, marginTop: 6, fontStyle: 'italic' },
-  noMenuText: { fontSize: FontSize.sm, color: Colors.textMuted, fontStyle: 'italic', marginTop: 4 },
-  tipsCard: {
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     padding: Spacing.lg,
-    marginTop: Spacing.md,
+    marginBottom: Spacing.lg,
     borderWidth: 1,
     borderColor: Colors.border,
+    ...Shadows.soft,
   },
-  tipsTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.text, marginBottom: Spacing.sm },
-  tipsText: { fontSize: FontSize.sm, color: Colors.textMuted, lineHeight: 22 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
+  cardHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  mealEmoji: { fontSize: 24 },
+  mealTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.text },
+  editBtn: { backgroundColor: Colors.primary + '20', paddingHorizontal: Spacing.md, paddingVertical: 4, borderRadius: Radius.full },
+  editBtnText: { color: Colors.primary, fontSize: FontSize.xs, fontWeight: FontWeight.bold },
+
+  itemsList: { gap: 6 },
+  itemChip: { marginVertical: 2 },
+  itemChipText: { fontSize: FontSize.md, color: Colors.text, fontWeight: FontWeight.medium },
+  notesText: { fontSize: FontSize.xs, color: Colors.warning, marginTop: 4, fontWeight: FontWeight.semibold },
+  emptyText: { fontSize: FontSize.sm, color: Colors.textMuted, fontStyle: 'italic' },
+
+  editContainer: { marginTop: Spacing.xs },
+  label: { color: Colors.textSecondary, fontSize: FontSize.xs, fontWeight: FontWeight.bold, marginBottom: 4, marginTop: Spacing.sm },
+  input: {
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    color: Colors.text,
+    fontSize: FontSize.sm,
+    minHeight: 70,
+  },
+  inputSmall: {
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    color: Colors.text,
+    fontSize: FontSize.sm,
+  },
+  specialToggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: Spacing.md },
+  specialToggleLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.warning },
+  catRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md },
+  catBtn: { flex: 1, paddingVertical: Spacing.sm, borderRadius: Radius.sm, borderWidth: 1, borderColor: Colors.border, alignItems: 'center' },
+  catBtnActive: { backgroundColor: Colors.primary + '20', borderColor: Colors.primary },
+  catText: { color: Colors.textMuted, fontSize: FontSize.xs, fontWeight: FontWeight.bold },
+  catTextActive: { color: Colors.primary },
+  editActions: { flexDirection: 'row', marginTop: Spacing.md },
 });

@@ -43,6 +43,8 @@ interface MessCard {
 interface TodayMenu {
   meal_type: string;
   items: string[];
+  is_special?: boolean;
+  category?: string;
 }
 
 interface LeaveStatus {
@@ -163,7 +165,7 @@ export default function StudentDashboardScreen({ navigation }: any) {
         const [menusRes, leavesRes] = await Promise.all([
           supabase
             .from('daily_menus')
-            .select('meal_type, items')
+            .select('meal_type, items, is_special, category')
             .eq('tenant_id', primaryTenant)
             .eq('menu_date', today),
           supabase
@@ -191,6 +193,21 @@ export default function StudentDashboardScreen({ navigation }: any) {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const handleRequestRenewal = async (card: MessCard) => {
+    try {
+      const { error } = await supabase.from('renewal_requests').insert({
+        student_id: card.student_id,
+        tenant_id: card.tenant_id,
+        status: 'pending',
+        notes: 'Requested via Student Dashboard',
+      });
+      if (error && error.code !== '23505') throw error;
+      Alert.alert('Request Sent 🎉', 'Your renewal request has been sent to your mess admin!');
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    }
+  };
 
   const toggleLeave = async (mealType: string, enabled: boolean) => {
     if (!primaryTenantId) return;
@@ -273,6 +290,25 @@ export default function StudentDashboardScreen({ navigation }: any) {
         />
       ) : (
         <>
+          {/* Sunday Special / Feast Banner */}
+          {todayMenus.some((m) => m.is_special) && (
+            <LinearGradient
+              colors={['#FF512F', '#DD2476']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.specialBanner}
+            >
+              <Text style={styles.specialBannerTitle}>⭐ TODAY'S SPECIAL FEAST ⭐</Text>
+              {todayMenus
+                .filter((m) => m.is_special)
+                .map((m) => (
+                  <Text key={m.meal_type} style={styles.specialBannerText}>
+                    {MEAL_EMOJI[m.meal_type]} {m.meal_type.toUpperCase()}: {m.items.join(' · ')}
+                  </Text>
+                ))}
+            </LinearGradient>
+          )}
+
           {/* Subscription Cards */}
           {cards.map((card) => (
             <LinearGradient
@@ -310,6 +346,18 @@ export default function StudentDashboardScreen({ navigation }: any) {
                   );
                 })}
               </View>
+
+              {card.days_remaining <= 5 && (
+                <View style={styles.renewalAlertCard}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.renewalTitle}>⏰ Plan Expiring Soon</Text>
+                    <Text style={styles.renewalSub}>{card.days_remaining} day(s) remaining on pass.</Text>
+                  </View>
+                  <TouchableOpacity style={styles.renewBtn} onPress={() => handleRequestRenewal(card)}>
+                    <Text style={styles.renewBtnText}>Request Renewal 🔄</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </LinearGradient>
           ))}
 
@@ -412,6 +460,30 @@ const styles = StyleSheet.create({
     borderLeftColor: Colors.warning,
   },
   expiryBannerText: { color: '#92400e', fontSize: FontSize.sm, fontWeight: FontWeight.semibold, lineHeight: 20 },
+
+  // Sunday Special Banner
+  specialBanner: {
+    borderRadius: Radius.xl,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+    ...Shadows.medium,
+  },
+  specialBannerTitle: { color: '#ffffff', fontSize: FontSize.md, fontWeight: FontWeight.heavy, marginBottom: 4, letterSpacing: 0.5 },
+  specialBannerText: { color: 'rgba(255,255,255,0.95)', fontSize: FontSize.sm, fontWeight: FontWeight.bold, marginTop: 2 },
+
+  // Renewal Request Alert Card inside Sub Card
+  renewalAlertCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  renewalTitle: { color: '#ffffff', fontSize: FontSize.sm, fontWeight: FontWeight.bold },
+  renewalSub: { color: 'rgba(255,255,255,0.8)', fontSize: FontSize.xs, marginTop: 2 },
+  renewBtn: { backgroundColor: Colors.accent, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs + 2, borderRadius: Radius.full },
+  renewBtnText: { color: '#ffffff', fontSize: FontSize.xs, fontWeight: FontWeight.bold },
 
   // Subscription Card
   subCard: {
