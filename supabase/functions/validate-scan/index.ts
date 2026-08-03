@@ -41,6 +41,7 @@ serve(async (req) => {
       device_id = null,
       is_mocked = false,
       dining_option = 'dine_in',
+      is_guest = false,
     } = body;
 
     // ── CHECK 0: Anti-Fraud Fake GPS ──
@@ -219,23 +220,25 @@ serve(async (req) => {
       );
     }
 
-    // ── CHECK 7: No duplicate attendance (UNIQUE constraint) ──
-    // We let the database unique constraint handle this, but we can pre-check for a better message
-    const { data: existing } = await supabaseAdmin
-      .from('attendance_records')
-      .select('id')
-      .eq('student_id', student.id)
-      .eq('meal_session_id', session.id)
-      .single();
+    // ── CHECK 7: No duplicate attendance for primary meal scan ──
+    if (!is_guest) {
+      const { data: existing } = await supabaseAdmin
+        .from('attendance_records')
+        .select('id')
+        .eq('student_id', student.id)
+        .eq('meal_session_id', session.id)
+        .or('is_guest_plate.is.null,is_guest_plate.eq.false')
+        .maybeSingle();
 
-    if (existing) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          message: `Already marked present for ${session.meal_type}. No duplicate scans allowed.`,
-        }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
+      if (existing) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: `Already marked present for ${session.meal_type}. Toggle 'Guest Plate (+1)' to scan for a friend.`,
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
     }
 
     // ── INSERT: Record attendance ──
@@ -253,6 +256,7 @@ serve(async (req) => {
         geo_lng,
         status: 'present',
         dining_option: finalDiningOption,
+        is_guest_plate: is_guest === true,
         synced_offline: false,
       });
 
@@ -278,9 +282,13 @@ serve(async (req) => {
       .eq('status', 'present');
 
     const isDabba = finalDiningOption === 'dabba';
-    const responseMsg = isDabba
+    let responseMsg = isDabba
       ? `Attendance marked for Dabba (Tiffin) packing! 📦 Collect your tiffin from counter.`
       : `Attendance marked for Dine-In! 🍽️ Enjoy your ${session.meal_type}.`;
+
+    if (is_guest) {
+      responseMsg = `Guest plate (+1) marked! 👥 Enjoy your ${session.meal_type} with your guest.`;
+    }
 
     return new Response(
       JSON.stringify({
@@ -288,6 +296,7 @@ serve(async (req) => {
         message: responseMsg,
         meal_type: session.meal_type,
         dining_option: finalDiningOption,
+        is_guest_plate: is_guest === true,
         scanned_at: new Date().toISOString(),
         session_scan_count: count,
       }),

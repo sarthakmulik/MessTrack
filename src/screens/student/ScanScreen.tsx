@@ -33,6 +33,7 @@ export default function ScanScreen({ navigation }: any) {
   const [scanned, setScanned] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [diningOption, setDiningOption] = useState<'dine_in' | 'dabba'>('dine_in');
+  const [isGuest, setIsGuest] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const cooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -106,6 +107,7 @@ export default function ScanScreen({ navigation }: any) {
           device_id,
           is_mocked: (location as any)?.mocked || false,
           dining_option: diningOption,
+          is_guest: isGuest,
         },
       });
 
@@ -247,6 +249,26 @@ export default function ScanScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
 
+        {/* Plate Type Selector (My Meal vs Guest Plate) */}
+        <View style={styles.plateContainer}>
+          <TouchableOpacity
+            style={[styles.plateBtn, !isGuest && styles.plateBtnActive]}
+            onPress={() => setIsGuest(false)}
+          >
+            <Text style={[styles.plateText, !isGuest && styles.plateTextActive]}>
+              👤 My Meal
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.plateBtn, isGuest && styles.plateBtnActiveGuest]}
+            onPress={() => setIsGuest(true)}
+          >
+            <Text style={[styles.plateText, isGuest && styles.plateTextActiveGuest]}>
+              👥 Guest Plate (+1)
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Viewfinder */}
         <View style={styles.viewfinderContainer}>
           <View style={styles.viewfinder}>
@@ -354,6 +376,39 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.bold,
   },
   modeTextActive: {
+    color: '#ffffff',
+  },
+  plateContainer: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: Radius.full,
+    padding: 4,
+    marginHorizontal: Spacing.xl,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  plateBtn: {
+    flex: 1,
+    paddingVertical: Spacing.xs + 2,
+    alignItems: 'center',
+    borderRadius: Radius.full,
+  },
+  plateBtnActive: {
+    backgroundColor: Colors.lunch,
+  },
+  plateBtnActiveGuest: {
+    backgroundColor: Colors.warning,
+  },
+  plateText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+  },
+  plateTextActive: {
+    color: '#ffffff',
+  },
+  plateTextActiveGuest: {
     color: '#ffffff',
   },
   viewfinderContainer: {

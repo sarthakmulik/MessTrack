@@ -12,6 +12,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { Colors, FontSize, FontWeight, Radius, Spacing } from '../../theme/tokens';
+import Badge from '../../components/Badge';
 
 type AttendanceStatus = 'present' | 'absent' | 'leave' | 'not_scanned';
 
@@ -22,6 +23,8 @@ interface StudentAttendanceRow {
   status: AttendanceStatus;
   attendance_record_id: string | null;
   scanned_at: string | null;
+  is_guest_plate?: boolean;
+  dining_option?: string;
 }
 
 const MEAL_TABS = ['breakfast', 'lunch', 'dinner'] as const;
@@ -73,7 +76,7 @@ export default function AdminAttendanceScreen({ navigation }: any) {
       // Get attendance records for this session
       const { data: records } = await supabase
         .from('attendance_records')
-        .select('id, student_id, status, scanned_at')
+        .select('id, student_id, status, scanned_at, is_guest_plate, dining_option')
         .eq('meal_session_id', session.id);
 
       const recordMap = new Map(
@@ -89,6 +92,8 @@ export default function AdminAttendanceScreen({ navigation }: any) {
           status: rec ? rec.status : 'not_scanned',
           attendance_record_id: rec?.id ?? null,
           scanned_at: rec?.scanned_at ?? null,
+          is_guest_plate: rec?.is_guest_plate ?? false,
+          dining_option: rec?.dining_option ?? 'dine_in',
         };
       });
 
@@ -200,7 +205,11 @@ export default function AdminAttendanceScreen({ navigation }: any) {
             </Text>
           </View>
           <View>
-            <Text style={styles.studentName}>{item.student_name}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={styles.studentName}>{item.student_name}</Text>
+              {item.is_guest_plate && <Badge label="👥 Guest" variant="warning" />}
+              {item.dining_option === 'dabba' && <Badge label="📦 Dabba" variant="info" />}
+            </View>
             <Text style={styles.studentEmail} numberOfLines={1}>{item.student_email}</Text>
             {item.scanned_at && (
               <Text style={styles.scannedAt}>
