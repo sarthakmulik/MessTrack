@@ -39,7 +39,7 @@ serve(async (req) => {
     // Fetch active subscriptions
     let subsQuery = supabaseAdmin
       .from('subscriptions')
-      .select('id, student_id, plan_id, tenant_id, start_date, end_date, plan:subscription_plans(price, days_included)')
+      .select('id, student_id, plan_id, tenant_id, start_date, end_date, plan:subscription_plans(price, days_included, meal_types)')
       .eq('status', 'active')
       .lte('start_date', periodEndStr)
       .gte('end_date', periodStartStr);
@@ -82,8 +82,9 @@ serve(async (req) => {
           .lte('scanned_at', today.toISOString());
 
         const plan = sub.plan;
-        const ratePerDay = plan ? plan.price / plan.days_included : 0;
-        const totalAmount = (daysPresent ?? 0) * ratePerDay;
+        const mealTypesCount = (plan?.meal_types || []).length || 1;
+        const ratePerMeal = (plan ? plan.price / plan.days_included : 0) / mealTypesCount;
+        const totalAmount = (daysPresent ?? 0) * ratePerMeal;
 
         const { error: insertErr } = await supabaseAdmin.from('invoices').insert({
           student_id: sub.student_id,
@@ -91,7 +92,7 @@ serve(async (req) => {
           period_start: periodStartStr,
           period_end: periodEndStr,
           days_present: daysPresent ?? 0,
-          rate_per_day: ratePerDay,
+          rate_per_day: ratePerMeal,
           total_amount: totalAmount,
           status: 'sent',
         });
