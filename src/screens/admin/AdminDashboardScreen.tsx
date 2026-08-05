@@ -121,9 +121,8 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
           .eq('leave_date', today),
         supabase
           .from('invoices')
-          .select('id, total_amount')
-          .eq('tenant_id', tenantId)
-          .in('status', ['sent', 'overdue']),
+          .select('id, total_amount, paid_amount, status')
+          .eq('tenant_id', tenantId),
         supabase
           .from('subscriptions')
           .select('id', { count: 'exact', head: true })
@@ -152,8 +151,15 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
       // Get unique students on leave today
       const uniqueStudentsOnLeave = new Set((leavesRes.data ?? []).map(r => r.student_id)).size;
       const onLeave = uniqueStudentsOnLeave;
-      const unpaidAmount = (unpaidInvoicesRes.data ?? []).reduce(
-        (sum, inv) => sum + (inv.total_amount ?? 0),
+      
+      // Calculate REAL unpaid balance dues across all non-paid invoices
+      const allInvoices = (unpaidInvoicesRes.data ?? []) as any[];
+      const unpaidInvoices = allInvoices.filter(
+        (inv) => inv.status !== 'paid' && (inv.total_amount - (inv.paid_amount || 0)) > 0,
+      );
+      const unpaidInvoicesCount = unpaidInvoices.length;
+      const unpaidInvoicesAmount = unpaidInvoices.reduce(
+        (sum, inv) => sum + Math.max(0, inv.total_amount - (inv.paid_amount || 0)),
         0,
       );
 
@@ -164,8 +170,8 @@ export default function AdminDashboardScreen({ navigation }: { navigation: any }
         messName: (tenantRes.data as any)?.name ?? 'Mess Admin',
         totalOnLeaveToday: onLeave,
         cookFor: Math.max(0, totalStudents - onLeave),
-        unpaidInvoicesCount: unpaidInvoicesRes.data?.length ?? 0,
-        unpaidInvoicesAmount: unpaidAmount,
+        unpaidInvoicesCount,
+        unpaidInvoicesAmount,
         expiringThisWeek: expiringSubsRes.count ?? 0,
         dineInCount,
         dabbaCount,

@@ -180,6 +180,10 @@ export default function BillingScreen() {
 
   const generateInvoice = async (row: StudentBillingRow) => {
     if (!tenantId) return;
+    if (row.total_due <= 0) {
+      Alert.alert('Info', `No dues for ${row.student_name} this period (0 meals scanned).`);
+      return;
+    }
     setGeneratingId(row.student_id);
     try {
       const { error } = await supabase.from('invoices').insert({
@@ -383,8 +387,63 @@ export default function BillingScreen() {
   const totalCollected = rows.reduce((sum, r) => sum + r.paid_amount, 0);
   const totalPendingDues = rows.reduce((sum, r) => sum + r.balance_due, 0);
 
+  const toggleMarkPaid = async (row: StudentBillingRow) => {
+    if (!row.existing_invoice_id || !tenantId) return;
+    const isCurrentlyPaid = row.invoice_status === 'paid' || row.balance_due <= 0;
+
+    Alert.alert(
+      isCurrentlyPaid ? 'Mark Invoice as Unpaid?' : 'Mark Invoice as Paid?',
+      isCurrentlyPaid 
+        ? `Reset bill for ${row.student_name} to unpaid status?`
+        : `Mark full payment of ₹${row.total_due.toFixed(0)} for ${row.student_name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: isCurrentlyPaid ? 'Mark Unpaid' : 'Mark Paid ✅',
+          onPress: async () => {
+            try {
+              if (isCurrentlyPaid) {
+                await supabase
+                  .from('invoices')
+                  .update({ paid_amount: 0.00, status: 'sent' })
+                  .eq('id', row.existing_invoice_id);
+
+                await supabase
+                  .from('payments')
+                  .delete()
+                  .eq('invoice_id', row.existing_invoice_id);
+              } else {
+                const currentUser = (await supabase.auth.getUser()).data.user;
+                await supabase.from('payments').insert({
+                  invoice_id: row.existing_invoice_id,
+                  student_id: row.student_id,
+                  tenant_id: tenantId,
+                  amount: row.balance_due,
+                  method: 'cash',
+                  notes: 'Manually marked as paid by admin',
+                  logged_by: currentUser?.id,
+                  status: 'success',
+                });
+
+                await supabase
+                  .from('invoices')
+                  .update({ paid_amount: row.total_due, status: 'paid' })
+                  .eq('id', row.existing_invoice_id);
+              }
+
+              await fetchBilling();
+              Alert.alert('Success', `Invoice updated for ${row.student_name}.`);
+            } catch (err: any) {
+              Alert.alert('Error', err.message);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const statusColor = (row: StudentBillingRow) => {
-    if (row.invoice_status === 'paid') return Colors.success;
+    if (row.invoice_status === 'paid' || (row.balance_due <= 0 && !!row.existing_invoice_id)) return Colors.success;
     if (row.invoice_status === 'partially_paid') return Colors.warning;
     if (row.invoice_status === 'overdue') return Colors.error;
     if (row.existing_invoice_id) return Colors.primary;
@@ -392,7 +451,7 @@ export default function BillingScreen() {
   };
 
   const statusText = (row: StudentBillingRow) => {
-    if (row.invoice_status === 'paid') return '✅ Paid';
+    if (row.invoice_status === 'paid' || (row.balance_due <= 0 && !!row.existing_invoice_id)) return '✅ Paid';
     if (row.invoice_status === 'partially_paid') return '⚠️ Partial';
     if (row.invoice_status === 'overdue') return '🔴 Overdue';
     if (row.existing_invoice_id) return '📤 Sent';
@@ -401,6 +460,8 @@ export default function BillingScreen() {
 
   const renderRow = ({ item }: { item: StudentBillingRow }) => {
     const isGen = generatingId === item.student_id;
+    const isPaid = item.invoice_status === 'paid' || (item.balance_due <= 0 && !!item.existing_invoice_id);
+
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
@@ -456,9 +517,16 @@ export default function BillingScreen() {
                   style={styles.collectBtn}
                   onPress={() => openPaymentModal(item)}
                 >
-                  <Text style={styles.collectBtnText}>Collect Payment 💰</Text>
+                  <Text style={styles.collectBtnText}>Collect 💰</Text>
                 </TouchableOpacity>
               )}
+
+              <TouchableOpacity
+                style={[styles.collectBtn, { backgroundColor: isPaid ? Colors.textMuted : Colors.primary }]}
+                onPress={() => toggleMarkPaid(item)}
+              >
+                <Text style={styles.collectBtnText}>{isPaid ? 'Unpaid 🔄' : 'Mark Paid ✅'}</Text>
+              </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.whatsappBtn}
